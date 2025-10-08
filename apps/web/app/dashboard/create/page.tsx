@@ -9,6 +9,7 @@ import { Select, SelectItem } from "@heroui/select";
 import { Switch } from "@heroui/switch";
 import { Progress } from "@heroui/progress";
 import { Chip } from "@heroui/chip";
+import { useRouter } from "next/navigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -33,6 +34,7 @@ interface JobStatus {
 }
 
 export default function CreatePage() {
+  const router = useRouter();
   const [videoFolders, setVideoFolders] = useState<Folder[]>([]);
   const [audioFolders, setAudioFolders] = useState<Folder[]>([]);
   const [csvFiles, setCSVFiles] = useState<CSVFile[]>([]);
@@ -115,18 +117,8 @@ export default function CreatePage() {
     setProcessing(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/video-processor/files/upload/csv`, {
-        method: "POST",
-        body: (() => {
-          const formData = new FormData();
-          const csvFilename = csvFiles.find(f => f.filepath === selectedCSV)?.filename;
-          if (csvFilename) {
-            const file = new File([""], csvFilename);
-            formData.append("file", file);
-          }
-          return formData;
-        })()
-      });
+      // Use preview endpoint to get CSV combinations
+      const res = await fetch(`${API_URL}/api/video-processor/files/preview/csv?filepath=${encodeURIComponent(selectedCSV)}`);
 
       const csvData = await res.json();
       const combinations = csvData.combinations || [];
@@ -336,6 +328,17 @@ export default function CreatePage() {
                         )}
                       </div>
                     </div>
+                  )}
+
+                  {jobStatus.status === "completed" && (
+                    <Button
+                      color="success"
+                      variant="flat"
+                      className="w-full mt-4"
+                      onPress={() => router.push("/dashboard/projects")}
+                    >
+                      View Projects
+                    </Button>
                   )}
                 </div>
               )}

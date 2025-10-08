@@ -177,10 +177,10 @@ Respuesta:
 - `zoom` - Zoom (alias de cover)
 
 ### Duration Policy
-- `shortest` - Duración del más corto entre video y audio (default)
-- `audio` - Duración del audio
-- `video` - Duración del video
-- `fixed` - Duración fija (especificar `fixed_seconds`)
+- `shortest` - Duracion del más corto entre video y audio (default)
+- `audio` - Duracion del audio
+- `video` - Duracion del video
+- `fixed` - Duracion fija (especificar `fixed_seconds`)
 
 ## 🔀 Integración con Next.js
 

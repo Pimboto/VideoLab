@@ -557,10 +557,10 @@ Obtiene la configuración por defecto del procesador.
 - `"bottom"`: Texto abajo
 
 ### `duration_policy`
-- `"shortest"`: Duración = min(video, audio)
-- `"audio"`: Duración del audio
-- `"video"`: Duración del video
-- `"fixed"`: Duración fija (requiere `fixed_seconds`)
+- `"shortest"`: Duracion = min(video, audio)
+- `"audio"`: Duracion del audio
+- `"video"`: Duracion del video
+- `"fixed"`: Duracion fija (requiere `fixed_seconds`)
 
 ### `fit_mode`
 - `"cover"`: Cubre todo el canvas (crop/zoom para videos landscape)

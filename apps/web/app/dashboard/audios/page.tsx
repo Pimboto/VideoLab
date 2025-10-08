@@ -283,6 +283,8 @@ export default function AudiosPage() {
               placeholder="Choose folder"
               selectedKeys={uploadFolder ? [uploadFolder] : []}
               onSelectionChange={(keys) => setUploadFolder(Array.from(keys)[0] as string)}
+              isRequired
+              description="Audios will be uploaded to this folder"
             >
               {folders.map((folder) => (
                 <SelectItem key={folder.name}>{folder.name}</SelectItem>
@@ -298,7 +300,7 @@ export default function AudiosPage() {
             <Button variant="light" onPress={onUploadClose}>
               Cancel
             </Button>
-            <Button color="primary" onPress={handleUpload} isLoading={uploading}>
+            <Button color="primary" onPress={handleUpload} isLoading={uploading} isDisabled={!uploadFolder || !selectedFile}>
               Upload
             </Button>
           </ModalFooter>
@@ -335,7 +337,7 @@ export default function AudiosPage() {
               <audio
                 controls
                 className="w-full"
-                src={`file://${previewAudio.filepath}`}
+                src={`${API_URL}/api/video-processor/files/stream/audio?filepath=${encodeURIComponent(previewAudio.filepath)}`}
               >
                 Your browser does not support audio playback.
               </audio>

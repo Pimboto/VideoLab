@@ -7,6 +7,7 @@ import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Select, SelectItem } from "@heroui/select";
 import { Chip } from "@heroui/chip";
+import { Skeleton } from "@heroui/skeleton";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -238,7 +239,22 @@ export default function VideosPage() {
         <div className="lg:col-span-3">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {loading ? (
-              <p>Loading...</p>
+              Array.from({ length: 6 }).map((_, i) => (
+                <Card key={i}>
+                  <CardBody className="gap-3">
+                    <Skeleton className="aspect-video rounded-lg" />
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-3/4 rounded" />
+                      <Skeleton className="h-3 w-1/2 rounded" />
+                    </div>
+                    <div className="flex gap-2">
+                      <Skeleton className="h-8 flex-1 rounded" />
+                      <Skeleton className="h-8 w-20 rounded" />
+                      <Skeleton className="h-8 w-20 rounded" />
+                    </div>
+                  </CardBody>
+                </Card>
+              ))
             ) : videos.length === 0 ? (
               <p className="text-default-400">No videos in this folder</p>
             ) : (
@@ -246,10 +262,23 @@ export default function VideosPage() {
                 <Card key={video.filepath}>
                   <CardBody className="gap-3">
                     <div
-                      className="aspect-video bg-gradient-to-br from-primary/20 to-secondary/20 rounded-lg flex items-center justify-center cursor-pointer hover:opacity-80 transition"
+                      className="aspect-video bg-black rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition relative group"
                       onClick={() => openPreview(video)}
                     >
-                      <span className="text-4xl">🎬</span>
+                      <video
+                        className="w-full h-full object-cover"
+                        src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(video.filepath)}#t=0.1`}
+                        preload="metadata"
+                        muted
+                        playsInline
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/50 transition pointer-events-none">
+                        <div className="bg-white/90 rounded-full p-3 group-hover:scale-110 transition">
+                          <svg className="w-8 h-8 text-black" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z"/>
+                          </svg>
+                        </div>
+                      </div>
                     </div>
                     <div>
                       <h4 className="font-semibold text-sm truncate">{video.filename}</h4>
@@ -285,6 +314,8 @@ export default function VideosPage() {
               placeholder="Choose folder"
               selectedKeys={uploadFolder ? [uploadFolder] : []}
               onSelectionChange={(keys) => setUploadFolder(Array.from(keys)[0] as string)}
+              isRequired
+              description="Videos will be uploaded to this folder"
             >
               {folders.map((folder) => (
                 <SelectItem key={folder.name}>{folder.name}</SelectItem>
@@ -300,7 +331,7 @@ export default function VideosPage() {
             <Button variant="light" onPress={onUploadClose}>
               Cancel
             </Button>
-            <Button color="primary" onPress={handleUpload} isLoading={uploading}>
+            <Button color="primary" onPress={handleUpload} isLoading={uploading} isDisabled={!uploadFolder || !selectedFile}>
               Upload
             </Button>
           </ModalFooter>
@@ -329,15 +360,15 @@ export default function VideosPage() {
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={isPreviewOpen} onClose={onPreviewClose} size="3xl">
+      <Modal isOpen={isPreviewOpen} onClose={onPreviewClose} size="5xl" scrollBehavior="inside">
         <ModalContent>
           <ModalHeader>{previewVideo?.filename}</ModalHeader>
           <ModalBody>
             {previewVideo && (
               <video
                 controls
-                className="w-full rounded-lg"
-                src={`file://${previewVideo.filepath}`}
+                className="w-full max-h-[70vh] rounded-lg"
+                src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(previewVideo.filepath)}`}
               >
                 Your browser does not support video playback.
               </video>

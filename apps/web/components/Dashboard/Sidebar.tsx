@@ -18,10 +18,10 @@ import {
 
 const navigationItems = [
   { name: "Create", icon: PlusIcon, href: "/dashboard/create" },
-  { name: "Audios", icon: AudioIcon, href: "/dashboard/audios" },
-  { name: "Videos", icon: VideoIcon, href: "/dashboard/videos" },
-  { name: "Texts", icon: DocumentIcon, href: "/dashboard/texts" },
   { name: "Projects", icon: FolderIcon, href: "/dashboard/projects" },
+  { name: "Videos", icon: VideoIcon, href: "/dashboard/videos" },
+  { name: "Audios", icon: AudioIcon, href: "/dashboard/audios" },
+  { name: "Texts", icon: DocumentIcon, href: "/dashboard/texts" },
   { name: "Settings", icon: SettingsIcon, href: "/dashboard/settings" },
   { name: "Help", icon: QuestionIcon, href: "/dashboard/help" },
 ];

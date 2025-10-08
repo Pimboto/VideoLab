@@ -124,14 +124,14 @@ def load_text_segments_csv(csv_path: Path) -> List[List[str]]:
         with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
             reader = csv.reader(f)
             for i, row in enumerate(reader, 1):
-                if not row: 
+                if not row:
                     continue
                 segs = [c.strip() for c in row if c and c.strip()]
                 if segs:
                     combos.append(segs)
-                    print(f"  Combinación {i}: {len(segs)} segmentos de texto")
+                    print(f"  Combination {i}: {len(segs)} text segments")
     except Exception as e:
-        print(f"Error leyendo CSV: {e}")
+        print(f"Error reading CSV: {e}")
     return combos
 
 def is_emoji(ch: str) -> bool:
@@ -163,18 +163,18 @@ class EmojiTextRenderer:
                     self.text_font_path = p
                     break
             if not self.text_font_path:
-                print("  ⚠️ No Inter/Arial found, using emoji font as fallback for text")
+                print("  WARNING: No Inter/Arial found, using emoji font as fallback for text")
                 self.text_font_path = find_emoji_font()
 
         self.emoji_font_path = emoji_font_path or find_emoji_font()
-        print(f"  Fuente para texto: {Path(self.text_font_path).name}")
-        print(f"  Fuente para emojis: {Path(self.emoji_font_path).name}")
+        print(f"  Text font: {Path(self.text_font_path).name}")
+        print(f"  Emoji font: {Path(self.emoji_font_path).name}")
 
         try:
             self.text_font = ImageFont.truetype(self.text_font_path, self.font_size)
             self.emoji_font = ImageFont.truetype(self.emoji_font_path, self.font_size)
         except Exception as e:
-            print(f"Error cargando fuentes: {e}")
+            print(f"Error loading fonts: {e}")
             self.text_font = ImageFont.load_default()
             self.emoji_font = self.text_font
 
@@ -191,9 +191,9 @@ class EmojiTextRenderer:
         s = presets.get(preset)
         if s:
             self.text_color = s["text_color"]; self.outline_color = s["outline_color"]; self.outline_width = s["outline_width"]
-            print(f"  Aplicando preset: {preset}")
+            print(f"  Applying preset: {preset}")
         else:
-            print(f"  ⚠️ Preset '{preset}' no encontrado, usando configuración por defecto")
+            print(f"  WARNING: Preset '{preset}' not found, using default config")
             self.text_color=(255,255,255); self.outline_color=(0,0,0); self.outline_width=2
 
     def _split_text_and_emojis(self, text: str):
@@ -375,8 +375,8 @@ def process_video_with_segments(video_path: Path, output_path: Path,
                                 fit_mode: str="cover",
                                 music_gain_db: int=-8,
                                 mix_audio: bool=False):
-    print(f"Procesando: {output_path.name}")
-    print(f"  Segmentos de texto: {len(text_segments)}")
+    print(f"Processing: {output_path.name}")
+    print(f"  Text segments: {len(text_segments)}")
 
     try:
         src_w, src_h, video_dur, fps = probe_video(video_path)
@@ -389,7 +389,7 @@ def process_video_with_segments(video_path: Path, output_path: Path,
 
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened():
-            raise ValueError(f"No se pudo abrir el video: {video_path}")
+            raise ValueError(f"Could not open video: {video_path}")
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -401,10 +401,10 @@ def process_video_with_segments(video_path: Path, output_path: Path,
                 fourcc = cv2.VideoWriter_fourcc(*codec)
                 out = cv2.VideoWriter(str(temp_video), fourcc, fps, (out_w, out_h))
                 if out.isOpened():
-                    print(f"  Usando codec: {codec}")
+                    print(f"  Using codec: {codec}")
                     break
             if not out.isOpened():
-                raise ValueError("No se pudo inicializar el video writer con ningún codec")
+                raise ValueError("Could not initialize video writer with any codec")
 
         if renderer is None:
             fontsize = max(18, int(out_h * 0.036))
@@ -416,7 +416,7 @@ def process_video_with_segments(video_path: Path, output_path: Path,
             try:
                 rendered.append(renderer.render_text(seg, max_w))
             except Exception as e:
-                print(f"  ⚠️ Error renderizando segmento '{seg[:20]}...': {e}")
+                print(f" Error rendering segment '{seg[:20]}...': {e}")
                 rendered.append(np.zeros((100,100,4), dtype=np.uint8))
 
         audio_dur = probe_audio_duration(audio_path) if audio_path else 0.0
@@ -430,7 +430,7 @@ def process_video_with_segments(video_path: Path, output_path: Path,
             target = min(video_dur, audio_dur) if audio_dur>0 else video_dur
 
         seg_dur = target/len(text_segments) if text_segments else target
-        print(f"  Duración por segmento: {seg_dur:.2f}s")
+        print(f"  Duration per segment: {seg_dur:.2f}s")
 
         max_frames = int(round(target * fps))
         frame_idx = 0
@@ -462,7 +462,7 @@ def process_video_with_segments(video_path: Path, output_path: Path,
         cap.release(); out.release()
 
         if audio_path and Path(audio_path).exists():
-            print(f"  Añadiendo audio: {Path(audio_path).name}")
+            print(f"  Adding audio: {Path(audio_path).name}")
             try:
                 video_clip = VideoFileClip(str(temp_video))
                 audio_clip = AudioFileClip(str(audio_path))
@@ -488,7 +488,7 @@ def process_video_with_segments(video_path: Path, output_path: Path,
                     try: temp_video.unlink()
                     except: pass
             except Exception as e:
-                print(f"  ⚠️ Error con audio: {e}")
+                print(f"WARNING: Error with audio: {e}")
                 if temp_video.exists():
                     shutil.move(str(temp_video), str(output_path))
         else:
@@ -496,11 +496,11 @@ def process_video_with_segments(video_path: Path, output_path: Path,
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(temp_video), str(output_path))
 
-        print(f"  ✓ Completado: {output_path.name}")
+        print(f"  SUCCESS: Completed {output_path.name}")
         return True
 
     except Exception as e:
-        print(f"  ✗ Error procesando video: {e}")
+        print(f"  ERROR: Failed processing video: {e}")
         import traceback; traceback.print_exc()
         return False
 

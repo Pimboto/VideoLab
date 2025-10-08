@@ -95,15 +95,7 @@ export default function TextsPage() {
 
   const openPreview = async (csv: CSVFile) => {
     try {
-      const formData = new FormData();
-      const blob = await fetch(`file://${csv.filepath}`).then(r => r.blob());
-      formData.append("file", blob, csv.filename);
-      formData.append("save_file", "false");
-
-      const res = await fetch(`${API_URL}/api/video-processor/files/upload/csv`, {
-        method: "POST",
-        body: formData
-      });
+      const res = await fetch(`${API_URL}/api/video-processor/files/preview/csv?filepath=${encodeURIComponent(csv.filepath)}`);
 
       if (res.ok) {
         const data = await res.json();

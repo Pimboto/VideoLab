@@ -4,7 +4,12 @@
       "Bash(test:*)",
       "Bash(python test:*)",
       "Bash(dir:*)",
-      "Bash(git init:*)"
+      "Bash(git init:*)",
+      "Bash(curl \"http://localhost:8000/api/video-processor/files/preview/csv?filepath=D%3A%5CWork%5Cvideo%5Ccsv%5Ctexts_20251007_123403_793c3f3b.csv\")",
+      "Bash(curl:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []
