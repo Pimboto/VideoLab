@@ -1,0 +1,13 @@
+{
+  "name": "api",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "python app.py",
+    "start": "python app.py",
+    "test": "python test_quick.py",
+    "test:full": "python test_api_full.py",
+    "clean": "rm -rf __pycache__ .pytest_cache"
+  },
+  "description": "Video Processor API - Professional FastAPI Architecture"
+}
