@@ -2,9 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@heroui/button";
-import { Card, CardBody } from "@heroui/card";
+import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
-import { Skeleton } from "@heroui/skeleton";
+import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
+import { Chip } from "@heroui/chip";
+import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
+import type { Selection } from "@heroui/table";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -18,14 +21,23 @@ interface OutputFile {
 
 export default function ProjectsPage() {
   const [outputs, setOutputs] = useState<OutputFile[]>([]);
+  const [folders, setFolders] = useState<string[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState<string>("all");
   const [loading, setLoading] = useState(false);
   const [previewVideo, setPreviewVideo] = useState<OutputFile | null>(null);
+  const [selectedOutputs, setSelectedOutputs] = useState<Selection>(new Set());
 
   const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
 
   useEffect(() => {
     loadOutputs();
   }, []);
+
+  useEffect(() => {
+    // Extract unique folders from outputs
+    const uniqueFolders = Array.from(new Set(outputs.map(o => o.folder).filter(Boolean)));
+    setFolders(uniqueFolders);
+  }, [outputs]);
 
   const loadOutputs = async () => {
     setLoading(true);
@@ -34,6 +46,7 @@ export default function ProjectsPage() {
       if (res.ok) {
         const data = await res.json();
         setOutputs(data.files || []);
+        setSelectedOutputs(new Set<string>());
       }
     } catch (error) {
       console.error("Error loading projects:", error);
@@ -42,17 +55,44 @@ export default function ProjectsPage() {
     }
   };
 
+  const filteredOutputs = selectedFolder === "all"
+    ? outputs
+    : outputs.filter(o => o.folder === selectedFolder);
+
   const handleDownload = (output: OutputFile) => {
-    // Trigger download
     const link = document.createElement("a");
     link.href = `${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(output.filepath)}`;
     link.download = output.filename;
     link.click();
   };
 
-  const openPreview = (output: OutputFile) => {
-    setPreviewVideo(output);
-    onPreviewOpen();
+  const handleBulkDownload = async () => {
+    const selection = selectedOutputs === "all" ? filteredOutputs.map(o => o.filepath) : Array.from(selectedOutputs);
+    if (selection.length === 0) return;
+
+    // Download each file one by one
+    for (const filepath of selection) {
+      const output = outputs.find(o => o.filepath === filepath);
+      if (output) {
+        handleDownload(output);
+        // Small delay between downloads
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+  };
+
+  const handleDownloadFolder = async () => {
+    if (selectedFolder === "all") return;
+
+    const folderOutputs = outputs.filter(o => o.folder === selectedFolder);
+    if (folderOutputs.length === 0) return;
+
+    if (!confirm(`Download all ${folderOutputs.length} files from "${selectedFolder}" folder?`)) return;
+
+    for (const output of folderOutputs) {
+      handleDownload(output);
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
   };
 
   const handleDelete = async (output: OutputFile) => {
@@ -73,6 +113,47 @@ export default function ProjectsPage() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    const selection = selectedOutputs === "all" ? filteredOutputs.map(o => o.filepath) : Array.from(selectedOutputs);
+    if (selection.length === 0) return;
+    if (!confirm(`Delete ${selection.length} selected projects?`)) return;
+
+    try {
+      const deletePromises = selection.map(filepath =>
+        fetch(`${API_URL}/api/video-processor/files/delete`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filepath })
+        })
+      );
+
+      await Promise.all(deletePromises);
+      setSelectedOutputs(new Set<string>());
+      loadOutputs();
+    } catch (error) {
+      console.error("Error deleting outputs:", error);
+    }
+  };
+
+  const openPreview = (output: OutputFile) => {
+    setPreviewVideo(output);
+    onPreviewOpen();
+  };
+
+  const getSelectedCount = () => {
+    return selectedOutputs === "all" ? filteredOutputs.length : selectedOutputs.size;
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  };
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString();
+  };
+
   return (
     <div className="p-8">
       <div className="flex justify-between items-center mb-6">
@@ -85,81 +166,172 @@ export default function ProjectsPage() {
         </Button>
       </div>
 
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Card key={i}>
-              <CardBody className="gap-3">
-                <Skeleton className="aspect-video rounded-lg" />
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-3/4 rounded" />
-                  <Skeleton className="h-3 w-1/2 rounded" />
-                </div>
-                <div className="flex gap-2">
-                  <Skeleton className="h-8 flex-1 rounded" />
-                  <Skeleton className="h-8 w-20 rounded" />
-                  <Skeleton className="h-8 w-20 rounded" />
-                </div>
-              </CardBody>
-            </Card>
-          ))}
-        </div>
-      ) : outputs.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-default-400 mb-4">No projects yet</p>
-          <p className="text-sm text-default-500">Create your first batch from the Create page</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {outputs.map((output) => (
-            <Card key={output.filepath}>
-              <CardBody className="gap-3">
-                <div
-                  className="aspect-video bg-black rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition relative group"
-                  onClick={() => openPreview(output)}
-                >
-                  <video
-                    className="w-full h-full object-cover"
-                    src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(output.filepath)}#t=0.1`}
-                    preload="metadata"
-                    muted
-                    playsInline
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/50 transition pointer-events-none">
-                    <div className="bg-success/90 rounded-full p-3 group-hover:scale-110 transition">
-                      <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z"/>
-                      </svg>
-                    </div>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Sidebar - Folders Filter */}
+        <div className="lg:col-span-1">
+          <Card>
+            <CardHeader>
+              <h3 className="font-semibold">Folders</h3>
+            </CardHeader>
+            <CardBody className="gap-2">
+              <Button
+                variant={selectedFolder === "all" ? "flat" : "light"}
+                color={selectedFolder === "all" ? "primary" : "default"}
+                className="justify-start"
+                onPress={() => setSelectedFolder("all")}
+              >
+                All Projects
+                <Chip size="sm" variant="flat" className="ml-auto">
+                  {outputs.length}
+                </Chip>
+              </Button>
+              {folders.map((folder) => {
+                const count = outputs.filter(o => o.folder === folder).length;
+                return (
+                  <div key={folder} className="flex items-center gap-2">
+                    <Button
+                      variant={selectedFolder === folder ? "flat" : "light"}
+                      color={selectedFolder === folder ? "primary" : "default"}
+                      className="justify-start flex-1"
+                      onPress={() => setSelectedFolder(folder)}
+                    >
+                      {folder}
+                      <Chip size="sm" variant="flat" className="ml-auto">
+                        {count}
+                      </Chip>
+                    </Button>
+                    <Dropdown>
+                      <DropdownTrigger>
+                        <Button size="sm" variant="light" isIconOnly>
+                          ⋮
+                        </Button>
+                      </DropdownTrigger>
+                      <DropdownMenu>
+                        <DropdownItem
+                          onPress={() => {
+                            setSelectedFolder(folder);
+                            setTimeout(handleDownloadFolder, 100);
+                          }}
+                        >
+                          Download All ({count})
+                        </DropdownItem>
+                      </DropdownMenu>
+                    </Dropdown>
                   </div>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-sm truncate">{output.filename}</h4>
-                  <p className="text-xs text-default-500">
-                    {(output.size / 1024 / 1024).toFixed(2)} MB
-                  </p>
-                  {output.folder && (
-                    <p className="text-xs text-default-400 mt-1">
-                      📁 {output.folder}
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="flat" className="flex-1" onPress={() => openPreview(output)}>
-                    Preview
-                  </Button>
-                  <Button size="sm" color="primary" variant="flat" onPress={() => handleDownload(output)}>
-                    Download
-                  </Button>
-                  <Button size="sm" color="danger" variant="flat" onPress={() => handleDelete(output)}>
-                    Delete
-                  </Button>
-                </div>
-              </CardBody>
-            </Card>
-          ))}
+                );
+              })}
+            </CardBody>
+          </Card>
         </div>
-      )}
+
+        {/* Main Content - Table */}
+        <div className="lg:col-span-3">
+          {getSelectedCount() > 0 && (
+            <div className="mb-4 flex gap-2 items-center bg-default-100 p-3 rounded-lg">
+              <Chip color="primary">{getSelectedCount()} selected</Chip>
+              <Button
+                size="sm"
+                color="primary"
+                variant="flat"
+                onPress={handleBulkDownload}
+              >
+                Download Selected
+              </Button>
+              <Button
+                size="sm"
+                color="danger"
+                variant="flat"
+                onPress={handleBulkDelete}
+              >
+                Delete Selected
+              </Button>
+              <Button
+                size="sm"
+                variant="flat"
+                onPress={() => setSelectedOutputs(new Set<string>())}
+              >
+                Clear Selection
+              </Button>
+            </div>
+          )}
+
+          <Table
+            aria-label="Projects table"
+            selectionMode="multiple"
+            selectedKeys={selectedOutputs}
+            onSelectionChange={setSelectedOutputs}
+            classNames={{
+              wrapper: "min-h-[400px]",
+            }}
+          >
+            <TableHeader>
+              <TableColumn>PREVIEW</TableColumn>
+              <TableColumn>NAME</TableColumn>
+              <TableColumn>FOLDER</TableColumn>
+              <TableColumn>SIZE</TableColumn>
+              <TableColumn>MODIFIED</TableColumn>
+              <TableColumn>ACTIONS</TableColumn>
+            </TableHeader>
+            <TableBody
+              items={filteredOutputs}
+              emptyContent={loading ? "Loading..." : "No projects in this folder"}
+            >
+              {(output) => (
+                <TableRow key={output.filepath}>
+                  <TableCell>
+                    <div
+                      className="w-20 h-12 bg-black rounded overflow-hidden cursor-pointer hover:opacity-80 transition"
+                      onClick={() => openPreview(output)}
+                    >
+                      <video
+                        className="w-full h-full object-cover"
+                        src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(output.filepath)}#t=0.1`}
+                        preload="metadata"
+                        muted
+                        playsInline
+                      />
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="max-w-xs">
+                      <p className="text-sm font-medium truncate">{output.filename}</p>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Chip size="sm" variant="flat" color="secondary">
+                      {output.folder || "No folder"}
+                    </Chip>
+                  </TableCell>
+                  <TableCell>
+                    <p className="text-sm text-default-500">{formatFileSize(output.size)}</p>
+                  </TableCell>
+                  <TableCell>
+                    <p className="text-sm text-default-500">{formatDate(output.modified)}</p>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="flat" onPress={() => openPreview(output)}>
+                        Preview
+                      </Button>
+                      <Dropdown>
+                        <DropdownTrigger>
+                          <Button size="sm" variant="flat">⋮</Button>
+                        </DropdownTrigger>
+                        <DropdownMenu>
+                          <DropdownItem onPress={() => handleDownload(output)}>Download</DropdownItem>
+                          <DropdownItem onPress={() => handleDelete(output)} className="text-danger" color="danger">
+                            Delete
+                          </DropdownItem>
+                        </DropdownMenu>
+                      </Dropdown>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
 
       <Modal isOpen={isPreviewOpen} onClose={onPreviewClose} size="5xl" scrollBehavior="inside">
         <ModalContent>

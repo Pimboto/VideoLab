@@ -42,6 +42,7 @@ export default function CreatePage() {
   const [selectedVideoFolder, setSelectedVideoFolder] = useState("");
   const [selectedAudioFolder, setSelectedAudioFolder] = useState("");
   const [selectedCSV, setSelectedCSV] = useState("");
+  const [previewVideoSrc, setPreviewVideoSrc] = useState("");
 
   const [position, setPosition] = useState("center");
   const [preset, setPreset] = useState("bold");
@@ -55,6 +56,12 @@ export default function CreatePage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (selectedVideoFolder) {
+      loadPreviewVideo(selectedVideoFolder);
+    }
+  }, [selectedVideoFolder]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -94,6 +101,24 @@ export default function CreatePage() {
     }
   };
 
+  const loadPreviewVideo = async (folderPath: string) => {
+    try {
+      const folderName = videoFolders.find(f => f.path === folderPath)?.name;
+      if (!folderName) return;
+
+      const params = `?subfolder=${folderName}`;
+      const res = await fetch(`${API_URL}/api/video-processor/files/videos${params}`);
+      const data = await res.json();
+
+      if (data.files && data.files.length > 0) {
+        const firstVideo = data.files[0];
+        setPreviewVideoSrc(`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(firstVideo.filepath)}`);
+      }
+    } catch (error) {
+      console.error("Error loading preview video:", error);
+    }
+  };
+
   const checkJobStatus = async (jobId: string) => {
     try {
       const res = await fetch(`${API_URL}/api/video-processor/processing/status/${jobId}`);
@@ -117,7 +142,6 @@ export default function CreatePage() {
     setProcessing(true);
 
     try {
-      // Use preview endpoint to get CSV combinations
       const res = await fetch(`${API_URL}/api/video-processor/files/preview/csv?filepath=${encodeURIComponent(selectedCSV)}`);
 
       const csvData = await res.json();
@@ -155,9 +179,41 @@ export default function CreatePage() {
     }
   };
 
+  const getTextPositionStyle = () => {
+    switch (position) {
+      case "top":
+        return "items-start pt-8";
+      case "bottom":
+        return "items-end pb-8";
+      default:
+        return "items-center";
+    }
+  };
+
+  const getTextPresetStyle = () => {
+    switch (preset) {
+      case "bold":
+        return "font-black text-2xl text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]";
+      case "clean":
+        return "font-semibold text-xl text-white";
+      case "subtle":
+        return "font-medium text-lg text-white/90";
+      case "yellow":
+        return "font-black text-2xl text-yellow-400 drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]";
+      case "shadow":
+        return "font-black text-2xl text-white shadow-[0_0_20px_rgba(0,0,0,1)]";
+      default:
+        return "font-black text-2xl text-white";
+    }
+  };
+
+  const getFitModeStyle = () => {
+    return fitMode === "cover" ? "object-cover" : "object-contain";
+  };
+
   return (
     <div className="p-8">
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-3xl font-bold mb-2">Batch Video Processing</h1>
         <p className="text-default-500">
           Create multiple videos with different combinations
@@ -165,18 +221,21 @@ export default function CreatePage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
+        {/* Left side - Select Sources at top, Processing Options below */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Select Sources Card */}
           <Card>
             <CardHeader>
-              <h2 className="text-xl font-semibold">Select Sources</h2>
+              <h2 className="font-semibold">Select Sources</h2>
             </CardHeader>
             <Divider />
-            <CardBody className="gap-4">
+            <CardBody className="gap-3">
               <Select
                 label="Video Folder"
                 placeholder="Choose video folder"
                 selectedKeys={selectedVideoFolder ? [selectedVideoFolder] : []}
                 onSelectionChange={(keys) => setSelectedVideoFolder(Array.from(keys)[0] as string)}
+                size="sm"
               >
                 {videoFolders.map((folder) => (
                   <SelectItem key={folder.path} textValue={folder.name}>
@@ -190,6 +249,7 @@ export default function CreatePage() {
                 placeholder="Choose audio folder"
                 selectedKeys={selectedAudioFolder ? [selectedAudioFolder] : []}
                 onSelectionChange={(keys) => setSelectedAudioFolder(Array.from(keys)[0] as string)}
+                size="sm"
               >
                 {audioFolders.map((folder) => (
                   <SelectItem key={folder.path} textValue={folder.name}>
@@ -203,6 +263,7 @@ export default function CreatePage() {
                 placeholder="Choose CSV file"
                 selectedKeys={selectedCSV ? [selectedCSV] : []}
                 onSelectionChange={(keys) => setSelectedCSV(Array.from(keys)[0] as string)}
+                size="sm"
               >
                 {csvFiles.map((csv) => (
                   <SelectItem key={csv.filepath} textValue={csv.filename}>
@@ -213,17 +274,19 @@ export default function CreatePage() {
             </CardBody>
           </Card>
 
+          {/* Processing Options Card */}
           <Card>
             <CardHeader>
-              <h2 className="text-xl font-semibold">Processing Options</h2>
+              <h2 className="font-semibold">Processing Options</h2>
             </CardHeader>
             <Divider />
-            <CardBody className="gap-4">
-              <div className="grid grid-cols-2 gap-4">
+            <CardBody className="gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <Select
                   label="Text Position"
                   selectedKeys={[position]}
                   onSelectionChange={(keys) => setPosition(Array.from(keys)[0] as string)}
+                  size="sm"
                 >
                   <SelectItem key="center">Center</SelectItem>
                   <SelectItem key="top">Top</SelectItem>
@@ -234,6 +297,7 @@ export default function CreatePage() {
                   label="Text Preset"
                   selectedKeys={[preset]}
                   onSelectionChange={(keys) => setPreset(Array.from(keys)[0] as string)}
+                  size="sm"
                 >
                   <SelectItem key="bold">Bold</SelectItem>
                   <SelectItem key="clean">Clean</SelectItem>
@@ -246,6 +310,7 @@ export default function CreatePage() {
                   label="Fit Mode"
                   selectedKeys={[fitMode]}
                   onSelectionChange={(keys) => setFitMode(Array.from(keys)[0] as string)}
+                  size="sm"
                 >
                   <SelectItem key="cover">Cover</SelectItem>
                   <SelectItem key="contain">Contain</SelectItem>
@@ -257,91 +322,145 @@ export default function CreatePage() {
                   value={uniqueAmount}
                   onValueChange={setUniqueAmount}
                   isDisabled={!uniqueMode}
+                  size="sm"
                 />
               </div>
 
               <Switch
                 isSelected={uniqueMode}
                 onValueChange={setUniqueMode}
+                size="sm"
               >
                 Unique Mode (Diverse combinations)
               </Switch>
-            </CardBody>
-          </Card>
-        </div>
-
-        <div className="lg:col-span-1">
-          <Card>
-            <CardHeader>
-              <h2 className="text-xl font-semibold">Start Processing</h2>
-            </CardHeader>
-            <Divider />
-            <CardBody className="gap-4">
-              <Button
-                color="primary"
-                size="lg"
-                className="w-full"
-                onPress={handleStartBatch}
-                isLoading={processing}
-                isDisabled={!selectedVideoFolder || !selectedAudioFolder || !selectedCSV}
-              >
-                Start Batch Processing
-              </Button>
 
               {jobStatus && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Status:</span>
-                    <Chip
+                <>
+                  <Divider className="my-2" />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Status:</span>
+                      <Chip
+                        color={
+                          jobStatus.status === "completed" ? "success" :
+                          jobStatus.status === "failed" ? "danger" :
+                          jobStatus.status === "processing" ? "primary" : "default"
+                        }
+                        size="sm"
+                      >
+                        {jobStatus.status}
+                      </Chip>
+                    </div>
+
+                    <Progress
+                      value={jobStatus.progress}
                       color={
                         jobStatus.status === "completed" ? "success" :
-                        jobStatus.status === "failed" ? "danger" :
-                        jobStatus.status === "processing" ? "primary" : "default"
+                        jobStatus.status === "failed" ? "danger" : "primary"
                       }
                       size="sm"
-                    >
-                      {jobStatus.status}
-                    </Chip>
+                    />
+
+                    <p className="text-xs text-default-500">{jobStatus.message}</p>
+
+                    {jobStatus.output_files.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold mb-1">
+                          Output Files ({jobStatus.output_files.length}):
+                        </p>
+                        <div className="text-xs text-default-500 max-h-20 overflow-y-auto">
+                          {jobStatus.output_files.slice(0, 3).map((file, i) => (
+                            <div key={i}>{file.split("/").pop()}</div>
+                          ))}
+                          {jobStatus.output_files.length > 3 && (
+                            <div>... and {jobStatus.output_files.length - 3} more</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {jobStatus.status === "completed" && (
+                      <Button
+                        color="success"
+                        variant="flat"
+                        size="sm"
+                        className="w-full"
+                        onPress={() => router.push("/dashboard/projects")}
+                      >
+                        View Projects
+                      </Button>
+                    )}
                   </div>
+                </>
+              )}
+            </CardBody>
+          </Card>
 
-                  <Progress
-                    value={jobStatus.progress}
-                    color={
-                      jobStatus.status === "completed" ? "success" :
-                      jobStatus.status === "failed" ? "danger" : "primary"
-                    }
+          {/* Start Processing Button */}
+          <Button
+            color="primary"
+            size="lg"
+            className="w-full"
+            onPress={handleStartBatch}
+            isLoading={processing}
+            isDisabled={!selectedVideoFolder || !selectedAudioFolder || !selectedCSV}
+          >
+            Start Batch Processing
+          </Button>
+        </div>
+
+        {/* Right side - Video Preview */}
+        <div className="lg:col-span-1">
+          <Card className="sticky top-8">
+            <CardHeader>
+              <h2 className="font-semibold">Preview</h2>
+            </CardHeader>
+            <Divider />
+            <CardBody>
+              <div className="relative aspect-[9/16] bg-gradient-to-br from-gray-900 to-gray-800 rounded-lg overflow-hidden shadow-lg">
+                {/* Video background */}
+                {previewVideoSrc ? (
+                  <video
+                    className={`absolute inset-0 w-full h-full ${getFitModeStyle()}`}
+                    src={`${previewVideoSrc}#t=0.1`}
+                    preload="metadata"
+                    muted
+                    playsInline
                   />
-
-                  <p className="text-xs text-default-500">{jobStatus.message}</p>
-
-                  {jobStatus.output_files.length > 0 && (
-                    <div className="mt-4">
-                      <p className="text-xs font-semibold mb-2">
-                        Output Files ({jobStatus.output_files.length}):
-                      </p>
-                      <div className="text-xs text-default-500 max-h-32 overflow-y-auto">
-                        {jobStatus.output_files.slice(0, 5).map((file, i) => (
-                          <div key={i}>{file.split("/").pop()}</div>
+                ) : (
+                  <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-orange-500/20">
+                    <div className="absolute inset-0 opacity-20">
+                      <div className="grid grid-cols-3 grid-rows-3 h-full">
+                        {Array.from({ length: 9 }).map((_, i) => (
+                          <div
+                            key={i}
+                            className="border border-white/10"
+                            style={{
+                              background: `linear-gradient(${45 + i * 20}deg, rgba(139, 92, 246, 0.3), rgba(236, 72, 153, 0.3))`
+                            }}
+                          />
                         ))}
-                        {jobStatus.output_files.length > 5 && (
-                          <div>... and {jobStatus.output_files.length - 5} more</div>
-                        )}
                       </div>
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {jobStatus.status === "completed" && (
-                    <Button
-                      color="success"
-                      variant="flat"
-                      className="w-full mt-4"
-                      onPress={() => router.push("/dashboard/projects")}
-                    >
-                      View Projects
-                    </Button>
-                  )}
+                {/* Text overlay with live preview */}
+                <div className={`absolute inset-0 flex justify-center ${getTextPositionStyle()} p-4`}>
+                  <div className="text-center max-w-[85%]">
+                    <p className={`${getTextPresetStyle()} leading-tight`}>
+                      Sample Text
+                    </p>
+                  </div>
                 </div>
-              )}
+
+                {/* Preview label */}
+                <div className="absolute top-2 right-2">
+                  <Chip size="sm" variant="flat" color="default" className="text-xs">
+                    Live
+                  </Chip>
+                </div>
+              </div>
             </CardBody>
           </Card>
         </div>

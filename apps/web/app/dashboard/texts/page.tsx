@@ -6,6 +6,10 @@ import { Input } from "@heroui/input";
 import { Card, CardBody } from "@heroui/card";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Chip } from "@heroui/chip";
+import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
+import { Checkbox } from "@heroui/checkbox";
+import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
+import type { Selection } from "@heroui/table";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -21,6 +25,7 @@ export default function TextsPage() {
   const [csvFiles, setCsvFiles] = useState<CSVFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [selectedCSVs, setSelectedCSVs] = useState<Selection>(new Set());
 
   const { isOpen, onOpen, onClose } = useDisclosure();
   const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
@@ -40,6 +45,7 @@ export default function TextsPage() {
       const res = await fetch(`${API_URL}/api/video-processor/files/csv`);
       const data = await res.json();
       setCsvFiles(data.files || []);
+      setSelectedCSVs(new Set<string>());
     } catch (error) {
       console.error("Error loading CSV files:", error);
     } finally {
@@ -93,6 +99,28 @@ export default function TextsPage() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    const selection = selectedCSVs === "all" ? csvFiles.map(c => c.filepath) : Array.from(selectedCSVs);
+    if (selection.length === 0) return;
+    if (!confirm(`Delete ${selection.length} selected CSV files?`)) return;
+
+    try {
+      const deletePromises = selection.map(filepath =>
+        fetch(`${API_URL}/api/video-processor/files/delete`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filepath })
+        })
+      );
+
+      await Promise.all(deletePromises);
+      setSelectedCSVs(new Set<string>());
+      loadCSVFiles();
+    } catch (error) {
+      console.error("Error deleting CSV files:", error);
+    }
+  };
+
   const openPreview = async (csv: CSVFile) => {
     try {
       const res = await fetch(`${API_URL}/api/video-processor/files/preview/csv?filepath=${encodeURIComponent(csv.filepath)}`);
@@ -108,6 +136,20 @@ export default function TextsPage() {
     }
   };
 
+  const getSelectedCount = () => {
+    return selectedCSVs === "all" ? csvFiles.length : selectedCSVs.size;
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  };
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString();
+  };
+
   return (
     <div className="p-8">
       <div className="flex justify-between items-center mb-6">
@@ -115,10 +157,33 @@ export default function TextsPage() {
           <h1 className="text-3xl font-bold mb-2">Text Combinations</h1>
           <p className="text-default-500">Manage your CSV text files</p>
         </div>
-        <Button onPress={onOpen} color="primary">
-          Upload CSV
-        </Button>
+        <div className="flex gap-2">
+          <Button onPress={onOpen} color="primary">
+            Upload CSV
+          </Button>
+        </div>
       </div>
+
+      {getSelectedCount() > 0 && (
+        <div className="mb-4 flex gap-2 items-center bg-default-100 p-3 rounded-lg">
+          <Chip color="primary">{getSelectedCount()} selected</Chip>
+          <Button
+            size="sm"
+            color="danger"
+            variant="flat"
+            onPress={handleBulkDelete}
+          >
+            Delete Selected
+          </Button>
+          <Button
+            size="sm"
+            variant="flat"
+            onPress={() => setSelectedCSVs(new Set<string>())}
+          >
+            Clear Selection
+          </Button>
+        </div>
+      )}
 
       {loading ? (
         <p>Loading...</p>
@@ -130,33 +195,56 @@ export default function TextsPage() {
           </Button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {csvFiles.map((csv) => (
-            <Card key={csv.filepath}>
-              <CardBody className="gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-warning/20 rounded-lg flex items-center justify-center">
-                    <span className="text-2xl">📝</span>
+        <Table
+          aria-label="CSV files table"
+          selectionMode="multiple"
+          selectedKeys={selectedCSVs}
+          onSelectionChange={setSelectedCSVs}
+          classNames={{
+            wrapper: "min-h-[400px]",
+          }}
+        >
+          <TableHeader>
+            <TableColumn>NAME</TableColumn>
+            <TableColumn>SIZE</TableColumn>
+            <TableColumn>MODIFIED</TableColumn>
+            <TableColumn>ACTIONS</TableColumn>
+          </TableHeader>
+          <TableBody items={csvFiles}>
+            {(csv) => (
+              <TableRow key={csv.filepath}>
+                <TableCell>
+                  <div className="max-w-xs">
+                    <p className="text-sm font-medium truncate">{csv.filename}</p>
                   </div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-sm truncate">{csv.filename}</h4>
-                    <p className="text-xs text-default-500">
-                      {(csv.size / 1024).toFixed(2)} KB
-                    </p>
+                </TableCell>
+                <TableCell>
+                  <p className="text-sm text-default-500">{formatFileSize(csv.size)}</p>
+                </TableCell>
+                <TableCell>
+                  <p className="text-sm text-default-500">{formatDate(csv.modified)}</p>
+                </TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="flat" onPress={() => openPreview(csv)}>
+                      Preview
+                    </Button>
+                    <Dropdown>
+                      <DropdownTrigger>
+                        <Button size="sm" variant="flat">⋮</Button>
+                      </DropdownTrigger>
+                      <DropdownMenu>
+                        <DropdownItem onPress={() => handleDelete(csv)} className="text-danger" color="danger">
+                          Delete
+                        </DropdownItem>
+                      </DropdownMenu>
+                    </Dropdown>
                   </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="flat" className="flex-1" onPress={() => openPreview(csv)}>
-                    Preview
-                  </Button>
-                  <Button size="sm" color="danger" variant="flat" onPress={() => handleDelete(csv)}>
-                    Delete
-                  </Button>
-                </div>
-              </CardBody>
-            </Card>
-          ))}
-        </div>
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       )}
 
       {combinations.length > 0 && (

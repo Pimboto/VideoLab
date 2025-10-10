@@ -8,6 +8,10 @@ import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure
 import { Select, SelectItem } from "@heroui/select";
 import { Chip } from "@heroui/chip";
 import { Skeleton } from "@heroui/skeleton";
+import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
+import { Checkbox } from "@heroui/checkbox";
+import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
+import type { Selection } from "@heroui/table";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -32,13 +36,21 @@ export default function VideosPage() {
   const [selectedFolder, setSelectedFolder] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [selectedVideos, setSelectedVideos] = useState<Selection>(new Set());
 
   const { isOpen: isUploadOpen, onOpen: onUploadOpen, onClose: onUploadClose } = useDisclosure();
   const { isOpen: isFolderOpen, onOpen: onFolderOpen, onClose: onFolderClose } = useDisclosure();
+  const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
+  const { isOpen: isRenameOpen, onOpen: onRenameOpen, onClose: onRenameClose } = useDisclosure();
+  const { isOpen: isMoveOpen, onOpen: onMoveOpen, onClose: onMoveClose } = useDisclosure();
 
   const [newFolderName, setNewFolderName] = useState("");
   const [uploadFolder, setUploadFolder] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewVideo, setPreviewVideo] = useState<VideoFile | null>(null);
+  const [renameVideo, setRenameVideo] = useState<VideoFile | null>(null);
+  const [newName, setNewName] = useState("");
+  const [moveToFolder, setMoveToFolder] = useState("");
 
   useEffect(() => {
     loadFolders();
@@ -70,6 +82,7 @@ export default function VideosPage() {
       const res = await fetch(`${API_URL}/api/video-processor/files/videos${params}`);
       const data = await res.json();
       setVideos(data.files || []);
+      setSelectedVideos(new Set<string>());
     } catch (error) {
       console.error("Error loading videos:", error);
     } finally {
@@ -99,13 +112,6 @@ export default function VideosPage() {
       console.error("Error creating folder:", error);
     }
   };
-
-  const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
-  const { isOpen: isRenameOpen, onOpen: onRenameOpen, onClose: onRenameClose } = useDisclosure();
-
-  const [previewVideo, setPreviewVideo] = useState<VideoFile | null>(null);
-  const [renameVideo, setRenameVideo] = useState<VideoFile | null>(null);
-  const [newName, setNewName] = useState("");
 
   const handleUpload = async () => {
     if (!selectedFile) return;
@@ -157,6 +163,62 @@ export default function VideosPage() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    const selection = selectedVideos === "all" ? videos.map(v => v.filepath) : Array.from(selectedVideos);
+    if (selection.length === 0) return;
+    if (!confirm(`Delete ${selection.length} selected videos?`)) return;
+
+    try {
+      const deletePromises = selection.map(filepath =>
+        fetch(`${API_URL}/api/video-processor/files/delete`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filepath })
+        })
+      );
+
+      await Promise.all(deletePromises);
+      setSelectedVideos(new Set<string>());
+      loadFolders();
+      loadVideos(selectedFolder);
+    } catch (error) {
+      console.error("Error deleting videos:", error);
+    }
+  };
+
+  const handleBulkMove = async () => {
+    const selection = selectedVideos === "all" ? videos.map(v => v.filepath) : Array.from(selectedVideos);
+    if (selection.length === 0 || !moveToFolder) return;
+
+    try {
+      const targetFolder = folders.find(f => f.name === moveToFolder);
+      if (!targetFolder) return;
+
+      const movePromises = selection.map(filepath => {
+        const filename = filepath.split(/[/\\]/).pop() || "";
+        const newPath = `${targetFolder.path}\\${filename}`;
+
+        return fetch(`${API_URL}/api/video-processor/files/move`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            source_path: filepath,
+            destination_folder: newPath
+          })
+        });
+      });
+
+      await Promise.all(movePromises);
+      setSelectedVideos(new Set<string>());
+      setMoveToFolder("");
+      onMoveClose();
+      loadFolders();
+      loadVideos(selectedFolder);
+    } catch (error) {
+      console.error("Error moving videos:", error);
+    }
+  };
+
   const handleRename = async () => {
     if (!renameVideo || !newName.trim()) return;
 
@@ -192,6 +254,20 @@ export default function VideosPage() {
     setRenameVideo(video);
     setNewName(video.filename);
     onRenameOpen();
+  };
+
+  const getSelectedCount = () => {
+    return selectedVideos === "all" ? videos.length : selectedVideos.size;
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  };
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString();
   };
 
   return (
@@ -237,71 +313,104 @@ export default function VideosPage() {
         </div>
 
         <div className="lg:col-span-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {loading ? (
-              Array.from({ length: 6 }).map((_, i) => (
-                <Card key={i}>
-                  <CardBody className="gap-3">
-                    <Skeleton className="aspect-video rounded-lg" />
-                    <div className="space-y-2">
-                      <Skeleton className="h-4 w-3/4 rounded" />
-                      <Skeleton className="h-3 w-1/2 rounded" />
-                    </div>
-                    <div className="flex gap-2">
-                      <Skeleton className="h-8 flex-1 rounded" />
-                      <Skeleton className="h-8 w-20 rounded" />
-                      <Skeleton className="h-8 w-20 rounded" />
-                    </div>
-                  </CardBody>
-                </Card>
-              ))
-            ) : videos.length === 0 ? (
-              <p className="text-default-400">No videos in this folder</p>
-            ) : (
-              videos.map((video) => (
-                <Card key={video.filepath}>
-                  <CardBody className="gap-3">
-                    <div
-                      className="aspect-video bg-black rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition relative group"
-                      onClick={() => openPreview(video)}
-                    >
-                      <video
-                        className="w-full h-full object-cover"
-                        src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(video.filepath)}#t=0.1`}
-                        preload="metadata"
-                        muted
-                        playsInline
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/50 transition pointer-events-none">
-                        <div className="bg-white/90 rounded-full p-3 group-hover:scale-110 transition">
-                          <svg className="w-8 h-8 text-black" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M8 5v14l11-7z"/>
-                          </svg>
-                        </div>
+          {getSelectedCount() > 0 && (
+            <div className="mb-4 flex gap-2 items-center bg-default-100 p-3 rounded-lg">
+              <Chip color="primary">{getSelectedCount()} selected</Chip>
+              <Button
+                size="sm"
+                color="danger"
+                variant="flat"
+                onPress={handleBulkDelete}
+              >
+                Delete Selected
+              </Button>
+              <Button
+                size="sm"
+                color="primary"
+                variant="flat"
+                onPress={onMoveOpen}
+              >
+                Move Selected
+              </Button>
+              <Button
+                size="sm"
+                variant="flat"
+                onPress={() => setSelectedVideos(new Set<string>())}
+              >
+                Clear Selection
+              </Button>
+            </div>
+          )}
+
+          <Table
+            aria-label="Videos table"
+            selectionMode="multiple"
+            selectedKeys={selectedVideos}
+            onSelectionChange={setSelectedVideos}
+            classNames={{
+              wrapper: "min-h-[400px]",
+            }}
+          >
+              <TableHeader>
+                <TableColumn>PREVIEW</TableColumn>
+                <TableColumn>NAME</TableColumn>
+                <TableColumn>SIZE</TableColumn>
+                <TableColumn>MODIFIED</TableColumn>
+                <TableColumn>ACTIONS</TableColumn>
+              </TableHeader>
+              <TableBody
+                items={videos}
+                emptyContent={loading ? "Loading..." : "No videos in this folder"}
+              >
+                {(video) => (
+                  <TableRow key={video.filepath}>
+                    <TableCell>
+                      <div
+                        className="w-20 h-12 bg-black rounded overflow-hidden cursor-pointer hover:opacity-80 transition"
+                        onClick={() => openPreview(video)}
+                      >
+                        <video
+                          className="w-full h-full object-cover"
+                          src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(video.filepath)}#t=0.1`}
+                          preload="metadata"
+                          muted
+                          playsInline
+                        />
                       </div>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-sm truncate">{video.filename}</h4>
-                      <p className="text-xs text-default-500">
-                        {(video.size / 1024 / 1024).toFixed(2)} MB
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="flat" className="flex-1" onPress={() => openPreview(video)}>
-                        Preview
-                      </Button>
-                      <Button size="sm" variant="flat" onPress={() => openRename(video)}>
-                        Rename
-                      </Button>
-                      <Button size="sm" color="danger" variant="flat" onPress={() => handleDelete(video)}>
-                        Delete
-                      </Button>
-                    </div>
-                  </CardBody>
-                </Card>
-              ))
-            )}
-          </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="max-w-xs">
+                        <p className="text-sm font-medium truncate">{video.filename}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <p className="text-sm text-default-500">{formatFileSize(video.size)}</p>
+                    </TableCell>
+                    <TableCell>
+                      <p className="text-sm text-default-500">{formatDate(video.modified)}</p>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="flat" onPress={() => openPreview(video)}>
+                          Preview
+                        </Button>
+                        <Dropdown>
+                          <DropdownTrigger>
+                            <Button size="sm" variant="flat">⋮</Button>
+                          </DropdownTrigger>
+                          <DropdownMenu>
+                            <DropdownItem onPress={() => openRename(video)}>Rename</DropdownItem>
+                            <DropdownItem onPress={() => handleDelete(video)} className="text-danger" color="danger">
+                              Delete
+                            </DropdownItem>
+                          </DropdownMenu>
+                        </Dropdown>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+          </Table>
         </div>
       </div>
 
@@ -397,6 +506,32 @@ export default function VideosPage() {
             </Button>
             <Button color="primary" onPress={handleRename}>
               Rename
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={isMoveOpen} onClose={onMoveClose}>
+        <ModalContent>
+          <ModalHeader>Move {getSelectedCount()} Videos</ModalHeader>
+          <ModalBody>
+            <Select
+              label="Destination Folder"
+              placeholder="Choose folder"
+              selectedKeys={moveToFolder ? [moveToFolder] : []}
+              onSelectionChange={(keys) => setMoveToFolder(Array.from(keys)[0] as string)}
+            >
+              {folders.filter(f => f.name !== selectedFolder).map((folder) => (
+                <SelectItem key={folder.name}>{folder.name}</SelectItem>
+              ))}
+            </Select>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="light" onPress={onMoveClose}>
+              Cancel
+            </Button>
+            <Button color="primary" onPress={handleBulkMove} isDisabled={!moveToFolder}>
+              Move
             </Button>
           </ModalFooter>
         </ModalContent>

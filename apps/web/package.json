@@ -55,11 +55,16 @@
     "@react-three/fiber": "^9.3.0",
     "clsx": "2.1.1",
     "framer-motion": "11.18.2",
+    "gsap": "^3.13.0",
+    "iconsax-reactjs": "^0.0.8",
     "intl-messageformat": "10.7.16",
+    "motion": "^12.23.24",
     "next": "15.3.1",
     "next-themes": "0.4.6",
+    "ogl": "^1.0.11",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "react-ogl": "^0.15.1",
     "three": "^0.180.0"
   },
   "devDependencies": {

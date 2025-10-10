@@ -16,6 +16,7 @@ import {
   DiscordIcon,
   Logo,
 } from "@/components/icons";
+import Image from "next/image";
 
 export const Navbar = () => {
   return (
@@ -23,19 +24,25 @@ export const Navbar = () => {
       <NavbarContent className="basis-1/5 sm:basis-full" justify="start">
         <NavbarBrand as="li" className="gap-3 max-w-fit">
           <NextLink className="flex justify-start items-center gap-1" href="/">
-            <Logo />
-            <p className="font-bold text-inherit">ACME</p>
+          <Image
+              src="/videolab-logo.png"
+              alt="VideoLab"
+              width={40}
+              height={40}
+              className="object-cover"
+            />
+            <p className="font-bold text-inherit">VideoLab</p>
           </NextLink>
         </NavbarBrand>
         <ul className="hidden lg:flex gap-4 justify-start ml-2">
-          <NavbarItem>
+{/*           <NavbarItem>
             <NextLink
               className="text-foreground hover:text-primary transition-colors"
               href="/"
             >
               Home
             </NextLink>
-          </NavbarItem>
+          </NavbarItem> */}
         </ul>
       </NavbarContent>
 

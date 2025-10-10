@@ -11,20 +11,22 @@ import {
 
 import { siteConfig } from "@/config/site";
 import { title, subtitle } from "@/components/primitives";
-import Silk from "./Silk";
+import DarkVeil from "./DarkVeil";
+import BlurText from "./BlurText";
+import { useTheme } from "next-themes";
 
 export default function Hero() {
   return (
     <div className="relative min-h-screen overflow-hidden">
       {/* Fondo Silk */}
       <div className="absolute inset-0 z-0">
-        <Silk
+       {/*  <Silk
           speed={5}
           scale={1}
           color="#7c3aed"
           noiseIntensity={1.5}
           rotation={0}
-        />
+        /> */}
         <div className="absolute inset-0 bg-gradient-to-br from-background/90 via-background/70 to-background/90" />
       </div>
 
