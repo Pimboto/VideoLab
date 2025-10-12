@@ -17,21 +17,16 @@ import { useTheme } from "next-themes";
 
 export default function Hero() {
   const { theme } = useTheme();
+  const isLight = theme === "light";
 
   return (
     <div className="relative min-h-screen overflow-hidden">
       {/* Fondo DarkVeil */}
       <div className="absolute inset-0 z-0">
-        {/* <DarkVeil
-          speed={0.5}
-          noiseIntensity={0.02}
-          scanlineIntensity={0}
-          hueShift={theme === "dark" ? 0 : 180}
-          scanlineFrequency={0}
-          warpAmount={0.3}
-          resolutionScale={0.8}
-        /> */}
-        <div className="absolute inset-0 bg-gradient-to-br from-background/90 via-background/70 to-background/90" />
+        <div className="w-full h-full relative" >
+          <DarkVeil speed={1.6} hueShift={0} noiseIntensity={0} scanlineFrequency={5} scanlineIntensity={0.04} warpAmount={5} />
+        </div>
+        <div className="absolute inset-0 bg-gradient-to-br from-background/50 via-background/30 to-background/60" />
       </div>
 
       {/* Contenido Hero */}
