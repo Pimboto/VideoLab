@@ -1,50 +1,40 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@heroui/button";
-import { Input } from "@heroui/input";
-import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Select, SelectItem } from "@heroui/select";
-import { Chip } from "@heroui/chip";
-import { Skeleton } from "@heroui/skeleton";
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
-import { Checkbox } from "@heroui/checkbox";
-import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
+import { Input } from "@heroui/input";
 import type { Selection } from "@heroui/table";
+import { Edit, Trash } from "iconsax-reactjs";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import FileTable from "@/components/Dashboard/FileTable";
+import FolderSidebar from "@/components/Dashboard/FolderSidebar";
+import BulkActions from "@/components/Dashboard/BulkActions";
+import { API_URL, delay } from "@/lib/utils";
+import type { VideoFile, Folder } from "@/lib/types";
 
-interface VideoFile {
-  filename: string;
-  filepath: string;
-  size: number;
-  modified: string;
-  type: string;
-}
-
-interface Folder {
-  name: string;
-  path: string;
-  file_count: number;
-  total_size: number;
-}
+const VIDEO_COLUMNS = [
+  { key: "preview", label: "PREVIEW" },
+  { key: "name", label: "NAME" },
+  { key: "size", label: "SIZE" },
+  { key: "modified", label: "MODIFIED" },
+  { key: "actions", label: "ACTIONS" }
+] as const;
 
 export default function VideosPage() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [videos, setVideos] = useState<VideoFile[]>([]);
-  const [selectedFolder, setSelectedFolder] = useState<string>("");
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedVideos, setSelectedVideos] = useState<Selection>(new Set());
 
   const { isOpen: isUploadOpen, onOpen: onUploadOpen, onClose: onUploadClose } = useDisclosure();
-  const { isOpen: isFolderOpen, onOpen: onFolderOpen, onClose: onFolderClose } = useDisclosure();
   const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
   const { isOpen: isRenameOpen, onOpen: onRenameOpen, onClose: onRenameClose } = useDisclosure();
   const { isOpen: isMoveOpen, onOpen: onMoveOpen, onClose: onMoveClose } = useDisclosure();
 
-  const [newFolderName, setNewFolderName] = useState("");
   const [uploadFolder, setUploadFolder] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewVideo, setPreviewVideo] = useState<VideoFile | null>(null);
@@ -59,6 +49,8 @@ export default function VideosPage() {
   useEffect(() => {
     if (selectedFolder) {
       loadVideos(selectedFolder);
+    } else {
+      loadAllVideos();
     }
   }, [selectedFolder]);
 
@@ -67,18 +59,29 @@ export default function VideosPage() {
       const res = await fetch(`${API_URL}/api/video-processor/folders/videos`);
       const data = await res.json();
       setFolders(data.folders || []);
-      if (data.folders?.length > 0 && !selectedFolder) {
-        setSelectedFolder(data.folders[0].name);
-      }
     } catch (error) {
       console.error("Error loading folders:", error);
+    }
+  };
+
+  const loadAllVideos = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/video-processor/files/videos`);
+      const data = await res.json();
+      setVideos(data.files || []);
+      setSelectedVideos(new Set<string>());
+    } catch (error) {
+      console.error("Error loading videos:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const loadVideos = async (folder: string) => {
     setLoading(true);
     try {
-      const params = folder ? `?subfolder=${folder}` : "";
+      const params = `?subfolder=${folder}`;
       const res = await fetch(`${API_URL}/api/video-processor/files/videos${params}`);
       const data = await res.json();
       setVideos(data.files || []);
@@ -90,22 +93,18 @@ export default function VideosPage() {
     }
   };
 
-  const handleCreateFolder = async () => {
-    if (!newFolderName.trim()) return;
-
+  const handleCreateFolder = async (folderName: string) => {
     try {
       const res = await fetch(`${API_URL}/api/video-processor/folders/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           parent_category: "videos",
-          folder_name: newFolderName
+          folder_name: folderName
         })
       });
 
       if (res.ok) {
-        setNewFolderName("");
-        onFolderClose();
         loadFolders();
       }
     } catch (error) {
@@ -113,16 +112,28 @@ export default function VideosPage() {
     }
   };
 
+  const handleRenameFolder = async (oldName: string, newName: string) => {
+    // TODO: Implement rename folder API
+    console.log("Rename folder:", oldName, "to", newName);
+    await delay(500);
+    loadFolders();
+  };
+
+  const handleDeleteFolder = async (folderName: string) => {
+    // TODO: Implement delete folder API
+    console.log("Delete folder:", folderName);
+    await delay(500);
+    loadFolders();
+  };
+
   const handleUpload = async () => {
-    if (!selectedFile) return;
+    if (!selectedFile || !uploadFolder) return;
 
     setUploading(true);
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
-      if (uploadFolder) {
-        formData.append("subfolder", uploadFolder);
-      }
+      formData.append("subfolder", uploadFolder);
 
       const res = await fetch(`${API_URL}/api/video-processor/files/upload/video`, {
         method: "POST",
@@ -131,10 +142,13 @@ export default function VideosPage() {
 
       if (res.ok) {
         setSelectedFile(null);
+        setUploadFolder("");
         onUploadClose();
         loadFolders();
-        if (uploadFolder) {
-          loadVideos(uploadFolder);
+        if (selectedFolder) {
+          loadVideos(selectedFolder);
+        } else {
+          loadAllVideos();
         }
       }
     } catch (error) {
@@ -156,7 +170,11 @@ export default function VideosPage() {
 
       if (res.ok) {
         loadFolders();
-        loadVideos(selectedFolder);
+        if (selectedFolder) {
+          loadVideos(selectedFolder);
+        } else {
+          loadAllVideos();
+        }
       }
     } catch (error) {
       console.error("Error deleting video:", error);
@@ -180,7 +198,11 @@ export default function VideosPage() {
       await Promise.all(deletePromises);
       setSelectedVideos(new Set<string>());
       loadFolders();
-      loadVideos(selectedFolder);
+      if (selectedFolder) {
+        loadVideos(selectedFolder);
+      } else {
+        loadAllVideos();
+      }
     } catch (error) {
       console.error("Error deleting videos:", error);
     }
@@ -213,7 +235,11 @@ export default function VideosPage() {
       setMoveToFolder("");
       onMoveClose();
       loadFolders();
-      loadVideos(selectedFolder);
+      if (selectedFolder) {
+        loadVideos(selectedFolder);
+      } else {
+        loadAllVideos();
+      }
     } catch (error) {
       console.error("Error moving videos:", error);
     }
@@ -238,7 +264,11 @@ export default function VideosPage() {
         setRenameVideo(null);
         onRenameClose();
         loadFolders();
-        loadVideos(selectedFolder);
+        if (selectedFolder) {
+          loadVideos(selectedFolder);
+        } else {
+          loadAllVideos();
+        }
       }
     } catch (error) {
       console.error("Error renaming video:", error);
@@ -256,18 +286,25 @@ export default function VideosPage() {
     onRenameOpen();
   };
 
+  const rowActions = useMemo(() => [
+    {
+      label: "Rename",
+      onClick: openRename,
+      color: "default" as const
+    },
+    {
+      label: "Delete",
+      onClick: handleDelete,
+      color: "danger" as const
+    }
+  ], []);
+
   const getSelectedCount = () => {
     return selectedVideos === "all" ? videos.length : selectedVideos.size;
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-  };
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString();
+  const getTotalCount = () => {
+    return folders.reduce((sum, folder) => sum + folder.file_count, 0);
   };
 
   return (
@@ -277,148 +314,88 @@ export default function VideosPage() {
           <h1 className="text-3xl font-bold mb-2">Videos</h1>
           <p className="text-default-500">Manage your video files</p>
         </div>
-        <div className="flex gap-2">
-          <Button onPress={onFolderOpen} variant="flat">
-            New Folder
-          </Button>
-          <Button onPress={onUploadOpen} color="primary">
-            Upload Video
-          </Button>
-        </div>
+        <Button onPress={onUploadOpen} color="primary">
+          Upload Video
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-1">
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold">Folders</h3>
-            </CardHeader>
-            <CardBody className="gap-2">
-              {folders.map((folder) => (
-                <Button
-                  key={folder.name}
-                  variant={selectedFolder === folder.name ? "flat" : "light"}
-                  color={selectedFolder === folder.name ? "primary" : "default"}
-                  className="justify-start"
-                  onPress={() => setSelectedFolder(folder.name)}
-                >
-                  {folder.name}
-                  <Chip size="sm" variant="flat" className="ml-auto">
-                    {folder.file_count}
-                  </Chip>
-                </Button>
-              ))}
-            </CardBody>
-          </Card>
+          <FolderSidebar
+            folders={folders}
+            selectedFolder={selectedFolder}
+            onSelectFolder={setSelectedFolder}
+            onCreateFolder={handleCreateFolder}
+            onRenameFolder={handleRenameFolder}
+            onDeleteFolder={handleDeleteFolder}
+            totalCount={getTotalCount()}
+            title="Video Folders"
+          />
         </div>
 
         <div className="lg:col-span-3">
-          {getSelectedCount() > 0 && (
-            <div className="mb-4 flex gap-2 items-center bg-default-100 p-3 rounded-lg">
-              <Chip color="primary">{getSelectedCount()} selected</Chip>
-              <Button
-                size="sm"
-                color="danger"
-                variant="flat"
-                onPress={handleBulkDelete}
-              >
-                Delete Selected
-              </Button>
-              <Button
-                size="sm"
-                color="primary"
-                variant="flat"
-                onPress={onMoveOpen}
-              >
-                Move Selected
-              </Button>
-              <Button
-                size="sm"
-                variant="flat"
-                onPress={() => setSelectedVideos(new Set<string>())}
-              >
-                Clear Selection
-              </Button>
-            </div>
-          )}
+          <BulkActions
+            selectedCount={getSelectedCount()}
+            onClear={() => setSelectedVideos(new Set<string>())}
+            actions={[
+              {
+                label: "Move Selected",
+                onClick: onMoveOpen,
+                color: "primary"
+              },
+              {
+                label: "Delete Selected",
+                onClick: handleBulkDelete,
+                color: "danger"
+              }
+            ]}
+          />
 
-          <Table
-            aria-label="Videos table"
-            selectionMode="multiple"
+          <FileTable
+            files={videos}
+            columns={VIDEO_COLUMNS}
             selectedKeys={selectedVideos}
             onSelectionChange={setSelectedVideos}
-            classNames={{
-              wrapper: "min-h-[400px]",
+            loading={loading}
+            emptyMessage="No videos in this folder"
+            primaryAction={{
+              label: "Preview",
+              onClick: openPreview
             }}
-          >
-              <TableHeader>
-                <TableColumn>PREVIEW</TableColumn>
-                <TableColumn>NAME</TableColumn>
-                <TableColumn>SIZE</TableColumn>
-                <TableColumn>MODIFIED</TableColumn>
-                <TableColumn>ACTIONS</TableColumn>
-              </TableHeader>
-              <TableBody
-                items={videos}
-                emptyContent={loading ? "Loading..." : "No videos in this folder"}
-              >
-                {(video) => (
-                  <TableRow key={video.filepath}>
-                    <TableCell>
-                      <div
-                        className="w-20 h-12 bg-black rounded overflow-hidden cursor-pointer hover:opacity-80 transition"
-                        onClick={() => openPreview(video)}
-                      >
-                        <video
-                          className="w-full h-full object-cover"
-                          src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(video.filepath)}#t=0.1`}
-                          preload="metadata"
-                          muted
-                          playsInline
-                        />
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="max-w-xs">
-                        <p className="text-sm font-medium truncate">{video.filename}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <p className="text-sm text-default-500">{formatFileSize(video.size)}</p>
-                    </TableCell>
-                    <TableCell>
-                      <p className="text-sm text-default-500">{formatDate(video.modified)}</p>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="flat" onPress={() => openPreview(video)}>
-                          Preview
-                        </Button>
-                        <Dropdown>
-                          <DropdownTrigger>
-                            <Button size="sm" variant="flat">⋮</Button>
-                          </DropdownTrigger>
-                          <DropdownMenu>
-                            <DropdownItem onPress={() => openRename(video)}>Rename</DropdownItem>
-                            <DropdownItem onPress={() => handleDelete(video)} className="text-danger" color="danger">
-                              Delete
-                            </DropdownItem>
-                          </DropdownMenu>
-                        </Dropdown>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-          </Table>
+            rowActions={rowActions}
+            renderCell={(file, columnKey) => {
+              const video = file as VideoFile;
+
+              if (columnKey === "preview") {
+                return (
+                  <div
+                    className="w-20 h-12 bg-black rounded overflow-hidden cursor-pointer hover:opacity-80 transition"
+                    onClick={() => openPreview(video)}
+                  >
+                    <video
+                      className="w-full h-full object-cover"
+                      src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(video.filepath)}#t=0.1`}
+                      preload="metadata"
+                      muted
+                      playsInline
+                    />
+                  </div>
+                );
+              }
+              return null;
+            }}
+          />
         </div>
       </div>
 
+      {/* Upload Modal */}
       <Modal isOpen={isUploadOpen} onClose={onUploadClose}>
         <ModalContent>
           <ModalHeader>Upload Video</ModalHeader>
           <ModalBody>
             <Select
+              id="upload-video-folder"
+              name="uploadFolder"
               label="Select Folder"
               placeholder="Choose folder"
               selectedKeys={uploadFolder ? [uploadFolder] : []}
@@ -431,6 +408,8 @@ export default function VideosPage() {
               ))}
             </Select>
             <Input
+              id="upload-video-file"
+              name="videoFile"
               type="file"
               accept=".mp4,.mov,.m4v,.avi,.mkv"
               onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
@@ -440,35 +419,19 @@ export default function VideosPage() {
             <Button variant="light" onPress={onUploadClose}>
               Cancel
             </Button>
-            <Button color="primary" onPress={handleUpload} isLoading={uploading} isDisabled={!uploadFolder || !selectedFile}>
+            <Button
+              color="primary"
+              onPress={handleUpload}
+              isLoading={uploading}
+              isDisabled={!uploadFolder || !selectedFile}
+            >
               Upload
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={isFolderOpen} onClose={onFolderClose}>
-        <ModalContent>
-          <ModalHeader>Create Folder</ModalHeader>
-          <ModalBody>
-            <Input
-              label="Folder Name"
-              placeholder="Enter folder name"
-              value={newFolderName}
-              onValueChange={setNewFolderName}
-            />
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="light" onPress={onFolderClose}>
-              Cancel
-            </Button>
-            <Button color="primary" onPress={handleCreateFolder}>
-              Create
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
+      {/* Preview Modal */}
       <Modal isOpen={isPreviewOpen} onClose={onPreviewClose} size="5xl" scrollBehavior="inside">
         <ModalContent>
           <ModalHeader>{previewVideo?.filename}</ModalHeader>
@@ -489,11 +452,14 @@ export default function VideosPage() {
         </ModalContent>
       </Modal>
 
+      {/* Rename Modal */}
       <Modal isOpen={isRenameOpen} onClose={onRenameClose}>
         <ModalContent>
           <ModalHeader>Rename Video</ModalHeader>
           <ModalBody>
             <Input
+              id="rename-video-name"
+              name="newVideoName"
               label="New Name"
               placeholder="Enter new name"
               value={newName}
@@ -511,11 +477,14 @@ export default function VideosPage() {
         </ModalContent>
       </Modal>
 
+      {/* Move Modal */}
       <Modal isOpen={isMoveOpen} onClose={onMoveClose}>
         <ModalContent>
           <ModalHeader>Move {getSelectedCount()} Videos</ModalHeader>
           <ModalBody>
             <Select
+              id="move-video-destination"
+              name="moveDestination"
               label="Destination Folder"
               placeholder="Choose folder"
               selectedKeys={moveToFolder ? [moveToFolder] : []}

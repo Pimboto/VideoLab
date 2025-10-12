@@ -30,7 +30,7 @@ export default function Hero() {
       </div>
 
       {/* Contenido Hero */}
-      <div className="relative z-10 flex flex-col items-center justify-center text-center py-16 md:py-24 min-h-screen">
+    <div className="relative z-10 flex flex-col items-center justify-center text-center py-16 md:py-24 min-h-screen">
         <div className="max-w-4xl mx-auto px-6">
           <div className="flex justify-center mb-6">
             <Chip

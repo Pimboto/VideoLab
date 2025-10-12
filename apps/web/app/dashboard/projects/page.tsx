@@ -11,6 +11,15 @@ import type { Selection } from "@heroui/table";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+const PROJECT_COLUMNS = [
+  { key: "preview", label: "PREVIEW" },
+  { key: "name", label: "NAME" },
+  { key: "folder", label: "FOLDER" },
+  { key: "size", label: "SIZE" },
+  { key: "modified", label: "MODIFIED" },
+  { key: "actions", label: "ACTIONS" }
+] as const;
+
 interface OutputFile {
   filename: string;
   filepath: string;
@@ -26,10 +35,12 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(false);
   const [previewVideo, setPreviewVideo] = useState<OutputFile | null>(null);
   const [selectedOutputs, setSelectedOutputs] = useState<Selection>(new Set());
+  const [mounted, setMounted] = useState(false);
 
   const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
 
   useEffect(() => {
+    setMounted(true);
     loadOutputs();
   }, []);
 
@@ -151,7 +162,12 @@ export default function ProjectsPage() {
   };
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString();
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    });
   };
 
   return (
@@ -255,108 +271,115 @@ export default function ProjectsPage() {
             </div>
           )}
 
-          <Table
-            aria-label="Projects table"
-            selectionMode="multiple"
-            selectedKeys={selectedOutputs}
-            onSelectionChange={setSelectedOutputs}
-            classNames={{
-              wrapper: "min-h-[400px]",
-            }}
-          >
-            <TableHeader>
-              <TableColumn>PREVIEW</TableColumn>
-              <TableColumn>NAME</TableColumn>
-              <TableColumn>FOLDER</TableColumn>
-              <TableColumn>SIZE</TableColumn>
-              <TableColumn>MODIFIED</TableColumn>
-              <TableColumn>ACTIONS</TableColumn>
-            </TableHeader>
-            <TableBody
-              items={filteredOutputs}
-              emptyContent={loading ? "Loading..." : "No projects in this folder"}
+          {!mounted ? (
+            <div className="flex items-center justify-center min-h-[400px]">
+              <p className="text-default-500">Loading...</p>
+            </div>
+          ) : (
+            <Table
+              aria-label="Projects table"
+              selectionMode="multiple"
+              selectedKeys={selectedOutputs}
+              onSelectionChange={setSelectedOutputs}
+              classNames={{
+                wrapper: "min-h-[400px]",
+              }}
             >
-              {(output) => (
-                <TableRow key={output.filepath}>
-                  <TableCell>
-                    <div
-                      className="w-20 h-12 bg-black rounded overflow-hidden cursor-pointer hover:opacity-80 transition"
-                      onClick={() => openPreview(output)}
-                    >
-                      <video
-                        className="w-full h-full object-cover"
-                        src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(output.filepath)}#t=0.1`}
-                        preload="metadata"
-                        muted
-                        playsInline
-                      />
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="max-w-xs">
-                      <p className="text-sm font-medium truncate">{output.filename}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Chip size="sm" variant="flat" color="secondary">
-                      {output.folder || "No folder"}
-                    </Chip>
-                  </TableCell>
-                  <TableCell>
-                    <p className="text-sm text-default-500">{formatFileSize(output.size)}</p>
-                  </TableCell>
-                  <TableCell>
-                    <p className="text-sm text-default-500">{formatDate(output.modified)}</p>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="flat" onPress={() => openPreview(output)}>
-                        Preview
-                      </Button>
-                      <Dropdown>
-                        <DropdownTrigger>
-                          <Button size="sm" variant="flat">⋮</Button>
-                        </DropdownTrigger>
-                        <DropdownMenu>
-                          <DropdownItem onPress={() => handleDownload(output)}>Download</DropdownItem>
-                          <DropdownItem onPress={() => handleDelete(output)} className="text-danger" color="danger">
-                            Delete
-                          </DropdownItem>
-                        </DropdownMenu>
-                      </Dropdown>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              <TableHeader columns={PROJECT_COLUMNS}>
+                {(column) => (
+                  <TableColumn key={column.key}>
+                    {column.label}
+                  </TableColumn>
+                )}
+              </TableHeader>
+              <TableBody
+                items={filteredOutputs}
+                emptyContent={loading ? "Loading..." : "No projects in this folder"}
+              >
+                {(output) => (
+                  <TableRow key={output.filepath}>
+                    <TableCell>
+                      <div
+                        className="w-20 h-12 bg-black rounded overflow-hidden cursor-pointer hover:opacity-80 transition"
+                        onClick={() => openPreview(output)}
+                      >
+                        <video
+                          className="w-full h-full object-cover"
+                          src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(output.filepath)}#t=0.1`}
+                          preload="metadata"
+                          muted
+                          playsInline
+                        />
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="max-w-xs">
+                        <p className="text-sm font-medium truncate">{output.filename}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Chip size="sm" variant="flat" color="secondary">
+                        {output.folder || "No folder"}
+                      </Chip>
+                    </TableCell>
+                    <TableCell>
+                      <p className="text-sm text-default-500">{formatFileSize(output.size)}</p>
+                    </TableCell>
+                    <TableCell>
+                      <p className="text-sm text-default-500">{formatDate(output.modified)}</p>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="flat" onPress={() => openPreview(output)}>
+                          Preview
+                        </Button>
+                        <Dropdown>
+                          <DropdownTrigger>
+                            <Button size="sm" variant="flat">⋮</Button>
+                          </DropdownTrigger>
+                          <DropdownMenu>
+                            <DropdownItem onPress={() => handleDownload(output)}>Download</DropdownItem>
+                            <DropdownItem onPress={() => handleDelete(output)} className="text-danger" color="danger">
+                              Delete
+                            </DropdownItem>
+                          </DropdownMenu>
+                        </Dropdown>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
         </div>
       </div>
 
-      <Modal isOpen={isPreviewOpen} onClose={onPreviewClose} size="5xl" scrollBehavior="inside">
-        <ModalContent>
-          <ModalHeader>{previewVideo?.filename}</ModalHeader>
-          <ModalBody>
-            {previewVideo && (
-              <video
-                controls
-                className="w-full max-h-[70vh] rounded-lg"
-                src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(previewVideo.filepath)}`}
-              >
-                Your browser does not support video playback.
-              </video>
-            )}
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="light" onPress={onPreviewClose}>
-              Close
-            </Button>
-            <Button color="primary" onPress={() => previewVideo && handleDownload(previewVideo)}>
-              Download
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      {mounted && (
+        <Modal isOpen={isPreviewOpen} onClose={onPreviewClose} size="5xl" scrollBehavior="inside">
+          <ModalContent>
+            <ModalHeader>{previewVideo?.filename}</ModalHeader>
+            <ModalBody>
+              {previewVideo && (
+                <video
+                  controls
+                  className="w-full max-h-[70vh] rounded-lg"
+                  src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(previewVideo.filepath)}`}
+                >
+                  Your browser does not support video playback.
+                </video>
+              )}
+            </ModalBody>
+            <ModalFooter>
+              <Button variant="light" onPress={onPreviewClose}>
+                Close
+              </Button>
+              <Button color="primary" onPress={() => previewVideo && handleDownload(previewVideo)}>
+                Download
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+      )}
     </div>
   );
 }

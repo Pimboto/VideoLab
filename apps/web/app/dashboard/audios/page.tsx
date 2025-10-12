@@ -1,49 +1,39 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@heroui/button";
-import { Input } from "@heroui/input";
-import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Select, SelectItem } from "@heroui/select";
-import { Chip } from "@heroui/chip";
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
-import { Checkbox } from "@heroui/checkbox";
-import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
+import { Input } from "@heroui/input";
 import type { Selection } from "@heroui/table";
+import { Edit, Trash } from "iconsax-reactjs";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import FileTable from "@/components/Dashboard/FileTable";
+import FolderSidebar from "@/components/Dashboard/FolderSidebar";
+import BulkActions from "@/components/Dashboard/BulkActions";
+import { API_URL, delay } from "@/lib/utils";
+import type { AudioFile, Folder } from "@/lib/types";
 
-interface AudioFile {
-  filename: string;
-  filepath: string;
-  size: number;
-  modified: string;
-  type: string;
-}
-
-interface Folder {
-  name: string;
-  path: string;
-  file_count: number;
-  total_size: number;
-}
+const AUDIO_COLUMNS = [
+  { key: "name", label: "NAME" },
+  { key: "size", label: "SIZE" },
+  { key: "modified", label: "MODIFIED" },
+  { key: "actions", label: "ACTIONS" }
+] as const;
 
 export default function AudiosPage() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [audios, setAudios] = useState<AudioFile[]>([]);
-  const [selectedFolder, setSelectedFolder] = useState<string>("");
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedAudios, setSelectedAudios] = useState<Selection>(new Set());
 
   const { isOpen: isUploadOpen, onOpen: onUploadOpen, onClose: onUploadClose } = useDisclosure();
-  const { isOpen: isFolderOpen, onOpen: onFolderOpen, onClose: onFolderClose } = useDisclosure();
   const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
   const { isOpen: isRenameOpen, onOpen: onRenameOpen, onClose: onRenameClose } = useDisclosure();
   const { isOpen: isMoveOpen, onOpen: onMoveOpen, onClose: onMoveClose } = useDisclosure();
 
-  const [newFolderName, setNewFolderName] = useState("");
   const [uploadFolder, setUploadFolder] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewAudio, setPreviewAudio] = useState<AudioFile | null>(null);
@@ -58,6 +48,8 @@ export default function AudiosPage() {
   useEffect(() => {
     if (selectedFolder) {
       loadAudios(selectedFolder);
+    } else {
+      loadAllAudios();
     }
   }, [selectedFolder]);
 
@@ -66,18 +58,29 @@ export default function AudiosPage() {
       const res = await fetch(`${API_URL}/api/video-processor/folders/audios`);
       const data = await res.json();
       setFolders(data.folders || []);
-      if (data.folders?.length > 0 && !selectedFolder) {
-        setSelectedFolder(data.folders[0].name);
-      }
     } catch (error) {
       console.error("Error loading folders:", error);
+    }
+  };
+
+  const loadAllAudios = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/video-processor/files/audios`);
+      const data = await res.json();
+      setAudios(data.files || []);
+      setSelectedAudios(new Set<string>());
+    } catch (error) {
+      console.error("Error loading audios:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const loadAudios = async (folder: string) => {
     setLoading(true);
     try {
-      const params = folder ? `?subfolder=${folder}` : "";
+      const params = `?subfolder=${folder}`;
       const res = await fetch(`${API_URL}/api/video-processor/files/audios${params}`);
       const data = await res.json();
       setAudios(data.files || []);
@@ -89,22 +92,18 @@ export default function AudiosPage() {
     }
   };
 
-  const handleCreateFolder = async () => {
-    if (!newFolderName.trim()) return;
-
+  const handleCreateFolder = async (folderName: string) => {
     try {
       const res = await fetch(`${API_URL}/api/video-processor/folders/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           parent_category: "audios",
-          folder_name: newFolderName
+          folder_name: folderName
         })
       });
 
       if (res.ok) {
-        setNewFolderName("");
-        onFolderClose();
         loadFolders();
       }
     } catch (error) {
@@ -112,16 +111,26 @@ export default function AudiosPage() {
     }
   };
 
+  const handleRenameFolder = async (oldName: string, newName: string) => {
+    console.log("Rename folder:", oldName, "to", newName);
+    await delay(500);
+    loadFolders();
+  };
+
+  const handleDeleteFolder = async (folderName: string) => {
+    console.log("Delete folder:", folderName);
+    await delay(500);
+    loadFolders();
+  };
+
   const handleUpload = async () => {
-    if (!selectedFile) return;
+    if (!selectedFile || !uploadFolder) return;
 
     setUploading(true);
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
-      if (uploadFolder) {
-        formData.append("subfolder", uploadFolder);
-      }
+      formData.append("subfolder", uploadFolder);
 
       const res = await fetch(`${API_URL}/api/video-processor/files/upload/audio`, {
         method: "POST",
@@ -130,10 +139,13 @@ export default function AudiosPage() {
 
       if (res.ok) {
         setSelectedFile(null);
+        setUploadFolder("");
         onUploadClose();
         loadFolders();
-        if (uploadFolder) {
-          loadAudios(uploadFolder);
+        if (selectedFolder) {
+          loadAudios(selectedFolder);
+        } else {
+          loadAllAudios();
         }
       }
     } catch (error) {
@@ -155,7 +167,11 @@ export default function AudiosPage() {
 
       if (res.ok) {
         loadFolders();
-        loadAudios(selectedFolder);
+        if (selectedFolder) {
+          loadAudios(selectedFolder);
+        } else {
+          loadAllAudios();
+        }
       }
     } catch (error) {
       console.error("Error deleting audio:", error);
@@ -179,7 +195,11 @@ export default function AudiosPage() {
       await Promise.all(deletePromises);
       setSelectedAudios(new Set<string>());
       loadFolders();
-      loadAudios(selectedFolder);
+      if (selectedFolder) {
+        loadAudios(selectedFolder);
+      } else {
+        loadAllAudios();
+      }
     } catch (error) {
       console.error("Error deleting audios:", error);
     }
@@ -212,7 +232,11 @@ export default function AudiosPage() {
       setMoveToFolder("");
       onMoveClose();
       loadFolders();
-      loadAudios(selectedFolder);
+      if (selectedFolder) {
+        loadAudios(selectedFolder);
+      } else {
+        loadAllAudios();
+      }
     } catch (error) {
       console.error("Error moving audios:", error);
     }
@@ -237,7 +261,11 @@ export default function AudiosPage() {
         setRenameAudio(null);
         onRenameClose();
         loadFolders();
-        loadAudios(selectedFolder);
+        if (selectedFolder) {
+          loadAudios(selectedFolder);
+        } else {
+          loadAllAudios();
+        }
       }
     } catch (error) {
       console.error("Error renaming audio:", error);
@@ -255,18 +283,25 @@ export default function AudiosPage() {
     onRenameOpen();
   };
 
+  const rowActions = useMemo(() => [
+    {
+      label: "Rename",
+      onClick: openRename,
+      color: "default" as const
+    },
+    {
+      label: "Delete",
+      onClick: handleDelete,
+      color: "danger" as const
+    }
+  ], []);
+
   const getSelectedCount = () => {
     return selectedAudios === "all" ? audios.length : selectedAudios.size;
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-  };
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString();
+  const getTotalCount = () => {
+    return folders.reduce((sum, folder) => sum + folder.file_count, 0);
   };
 
   return (
@@ -276,133 +311,67 @@ export default function AudiosPage() {
           <h1 className="text-3xl font-bold mb-2">Audios</h1>
           <p className="text-default-500">Manage your audio files</p>
         </div>
-        <div className="flex gap-2">
-          <Button onPress={onFolderOpen} variant="flat">
-            New Folder
-          </Button>
-          <Button onPress={onUploadOpen} color="primary">
-            Upload Audio
-          </Button>
-        </div>
+        <Button onPress={onUploadOpen} color="primary">
+          Upload Audio
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-1">
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold">Folders</h3>
-            </CardHeader>
-            <CardBody className="gap-2">
-              {folders.map((folder) => (
-                <Button
-                  key={folder.name}
-                  variant={selectedFolder === folder.name ? "flat" : "light"}
-                  color={selectedFolder === folder.name ? "primary" : "default"}
-                  className="justify-start"
-                  onPress={() => setSelectedFolder(folder.name)}
-                >
-                  {folder.name}
-                  <Chip size="sm" variant="flat" className="ml-auto">
-                    {folder.file_count}
-                  </Chip>
-                </Button>
-              ))}
-            </CardBody>
-          </Card>
+          <FolderSidebar
+            folders={folders}
+            selectedFolder={selectedFolder}
+            onSelectFolder={setSelectedFolder}
+            onCreateFolder={handleCreateFolder}
+            onRenameFolder={handleRenameFolder}
+            onDeleteFolder={handleDeleteFolder}
+            totalCount={getTotalCount()}
+            title="Audio Folders"
+          />
         </div>
 
         <div className="lg:col-span-3">
-          {getSelectedCount() > 0 && (
-            <div className="mb-4 flex gap-2 items-center bg-default-100 p-3 rounded-lg">
-              <Chip color="primary">{getSelectedCount()} selected</Chip>
-              <Button
-                size="sm"
-                color="danger"
-                variant="flat"
-                onPress={handleBulkDelete}
-              >
-                Delete Selected
-              </Button>
-              <Button
-                size="sm"
-                color="primary"
-                variant="flat"
-                onPress={onMoveOpen}
-              >
-                Move Selected
-              </Button>
-              <Button
-                size="sm"
-                variant="flat"
-                onPress={() => setSelectedAudios(new Set<string>())}
-              >
-                Clear Selection
-              </Button>
-            </div>
-          )}
+          <BulkActions
+            selectedCount={getSelectedCount()}
+            onClear={() => setSelectedAudios(new Set<string>())}
+            actions={[
+              {
+                label: "Move Selected",
+                onClick: onMoveOpen,
+                color: "primary"
+              },
+              {
+                label: "Delete Selected",
+                onClick: handleBulkDelete,
+                color: "danger"
+              }
+            ]}
+          />
 
-          <Table
-            aria-label="Audios table"
-            selectionMode="multiple"
+          <FileTable
+            files={audios}
+            columns={AUDIO_COLUMNS}
             selectedKeys={selectedAudios}
             onSelectionChange={setSelectedAudios}
-            classNames={{
-              wrapper: "min-h-[400px]",
+            loading={loading}
+            emptyMessage="No audios in this folder"
+            primaryAction={{
+              label: "Play",
+              onClick: openPreview
             }}
-          >
-              <TableHeader>
-                <TableColumn>NAME</TableColumn>
-                <TableColumn>SIZE</TableColumn>
-                <TableColumn>MODIFIED</TableColumn>
-                <TableColumn>ACTIONS</TableColumn>
-              </TableHeader>
-              <TableBody
-                items={audios}
-                emptyContent={loading ? "Loading..." : "No audios in this folder"}
-              >
-                {(audio) => (
-                  <TableRow key={audio.filepath}>
-                    <TableCell>
-                      <div className="max-w-xs">
-                        <p className="text-sm font-medium truncate">{audio.filename}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <p className="text-sm text-default-500">{formatFileSize(audio.size)}</p>
-                    </TableCell>
-                    <TableCell>
-                      <p className="text-sm text-default-500">{formatDate(audio.modified)}</p>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="flat" onPress={() => openPreview(audio)}>
-                          Play
-                        </Button>
-                        <Dropdown>
-                          <DropdownTrigger>
-                            <Button size="sm" variant="flat">⋮</Button>
-                          </DropdownTrigger>
-                          <DropdownMenu>
-                            <DropdownItem onPress={() => openRename(audio)}>Rename</DropdownItem>
-                            <DropdownItem onPress={() => handleDelete(audio)} className="text-danger" color="danger">
-                              Delete
-                            </DropdownItem>
-                          </DropdownMenu>
-                        </Dropdown>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-          </Table>
+            rowActions={rowActions}
+          />
         </div>
       </div>
 
+      {/* Upload Modal */}
       <Modal isOpen={isUploadOpen} onClose={onUploadClose}>
         <ModalContent>
           <ModalHeader>Upload Audio</ModalHeader>
           <ModalBody>
             <Select
+              id="upload-audio-folder"
+              name="uploadFolder"
               label="Select Folder"
               placeholder="Choose folder"
               selectedKeys={uploadFolder ? [uploadFolder] : []}
@@ -415,6 +384,8 @@ export default function AudiosPage() {
               ))}
             </Select>
             <Input
+              id="upload-audio-file"
+              name="audioFile"
               type="file"
               accept=".mp3,.wav,.m4a"
               onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
@@ -424,35 +395,19 @@ export default function AudiosPage() {
             <Button variant="light" onPress={onUploadClose}>
               Cancel
             </Button>
-            <Button color="primary" onPress={handleUpload} isLoading={uploading} isDisabled={!uploadFolder || !selectedFile}>
+            <Button
+              color="primary"
+              onPress={handleUpload}
+              isLoading={uploading}
+              isDisabled={!uploadFolder || !selectedFile}
+            >
               Upload
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={isFolderOpen} onClose={onFolderClose}>
-        <ModalContent>
-          <ModalHeader>Create Folder</ModalHeader>
-          <ModalBody>
-            <Input
-              label="Folder Name"
-              placeholder="Enter folder name"
-              value={newFolderName}
-              onValueChange={setNewFolderName}
-            />
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="light" onPress={onFolderClose}>
-              Cancel
-            </Button>
-            <Button color="primary" onPress={handleCreateFolder}>
-              Create
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
+      {/* Preview Modal */}
       <Modal isOpen={isPreviewOpen} onClose={onPreviewClose} size="2xl">
         <ModalContent>
           <ModalHeader>{previewAudio?.filename}</ModalHeader>
@@ -473,11 +428,14 @@ export default function AudiosPage() {
         </ModalContent>
       </Modal>
 
+      {/* Rename Modal */}
       <Modal isOpen={isRenameOpen} onClose={onRenameClose}>
         <ModalContent>
           <ModalHeader>Rename Audio</ModalHeader>
           <ModalBody>
             <Input
+              id="rename-audio-name"
+              name="newAudioName"
               label="New Name"
               placeholder="Enter new name"
               value={newName}
@@ -495,11 +453,14 @@ export default function AudiosPage() {
         </ModalContent>
       </Modal>
 
+      {/* Move Modal */}
       <Modal isOpen={isMoveOpen} onClose={onMoveClose}>
         <ModalContent>
           <ModalHeader>Move {getSelectedCount()} Audios</ModalHeader>
           <ModalBody>
             <Select
+              id="move-audio-destination"
+              name="moveDestination"
               label="Destination Folder"
               placeholder="Choose folder"
               selectedKeys={moveToFolder ? [moveToFolder] : []}
