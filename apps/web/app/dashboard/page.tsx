@@ -155,7 +155,7 @@ export default function DashboardPage() {
     <div className="p-8">
       {/* Hero Section */}
       <div ref={heroRef} className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Welcome back, Francisco</h1>
+        <h1 className="text-3xl font-bold mb-2">Welcome back, John Doe</h1>
         <p className="text-default-500">Ready to create something amazing?</p>
       </div>
 

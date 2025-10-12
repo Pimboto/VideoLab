@@ -10,6 +10,7 @@ import { Switch } from "@heroui/switch";
 import { Progress } from "@heroui/progress";
 import { Chip } from "@heroui/chip";
 import { useRouter } from "next/navigation";
+import { fontRoboto, fontInter } from "@/config/fonts";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -45,7 +46,7 @@ export default function CreatePage() {
   const [previewVideoSrc, setPreviewVideoSrc] = useState("");
 
   const [position, setPosition] = useState("center");
-  const [preset, setPreset] = useState("bold");
+  const [preset, setPreset] = useState("instagram1");
   const [fitMode, setFitMode] = useState("cover");
   const [uniqueMode, setUniqueMode] = useState(true);
   const [uniqueAmount, setUniqueAmount] = useState("50");
@@ -65,7 +66,10 @@ export default function CreatePage() {
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (jobStatus && (jobStatus.status === "pending" || jobStatus.status === "processing")) {
+    if (
+      jobStatus &&
+      (jobStatus.status === "pending" || jobStatus.status === "processing")
+    ) {
       interval = setInterval(() => {
         checkJobStatus(jobStatus.job_id);
       }, 2000);
@@ -80,13 +84,13 @@ export default function CreatePage() {
       const [vRes, aRes, cRes] = await Promise.all([
         fetch(`${API_URL}/api/video-processor/folders/videos`),
         fetch(`${API_URL}/api/video-processor/folders/audios`),
-        fetch(`${API_URL}/api/video-processor/files/csv`)
+        fetch(`${API_URL}/api/video-processor/files/csv`),
       ]);
 
       const [vData, aData, cData] = await Promise.all([
         vRes.json(),
         aRes.json(),
-        cRes.json()
+        cRes.json(),
       ]);
 
       setVideoFolders(vData.folders || []);
@@ -103,16 +107,20 @@ export default function CreatePage() {
 
   const loadPreviewVideo = async (folderPath: string) => {
     try {
-      const folderName = videoFolders.find(f => f.path === folderPath)?.name;
+      const folderName = videoFolders.find((f) => f.path === folderPath)?.name;
       if (!folderName) return;
 
       const params = `?subfolder=${folderName}`;
-      const res = await fetch(`${API_URL}/api/video-processor/files/videos${params}`);
+      const res = await fetch(
+        `${API_URL}/api/video-processor/files/videos${params}`
+      );
       const data = await res.json();
 
       if (data.files && data.files.length > 0) {
         const firstVideo = data.files[0];
-        setPreviewVideoSrc(`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(firstVideo.filepath)}`);
+        setPreviewVideoSrc(
+          `${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(firstVideo.filepath)}`
+        );
       }
     } catch (error) {
       console.error("Error loading preview video:", error);
@@ -121,7 +129,9 @@ export default function CreatePage() {
 
   const checkJobStatus = async (jobId: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/video-processor/processing/status/${jobId}`);
+      const res = await fetch(
+        `${API_URL}/api/video-processor/processing/status/${jobId}`
+      );
       const data = await res.json();
       setJobStatus(data);
 
@@ -142,28 +152,33 @@ export default function CreatePage() {
     setProcessing(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/video-processor/files/preview/csv?filepath=${encodeURIComponent(selectedCSV)}`);
+      const res = await fetch(
+        `${API_URL}/api/video-processor/files/preview/csv?filepath=${encodeURIComponent(selectedCSV)}`
+      );
 
       const csvData = await res.json();
       const combinations = csvData.combinations || [];
 
-      const batchRes = await fetch(`${API_URL}/api/video-processor/processing/process-batch`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          video_folder: selectedVideoFolder,
-          audio_folder: selectedAudioFolder,
-          text_combinations: combinations,
-          output_folder: "D:/Work/video/output",
-          unique_mode: uniqueMode,
-          unique_amount: parseInt(uniqueAmount),
-          config: {
-            position,
-            preset,
-            fit_mode: fitMode
-          }
-        })
-      });
+      const batchRes = await fetch(
+        `${API_URL}/api/video-processor/processing/process-batch`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            video_folder: selectedVideoFolder,
+            audio_folder: selectedAudioFolder,
+            text_combinations: combinations,
+            output_folder: "D:/Work/video/output",
+            unique_mode: uniqueMode,
+            unique_amount: parseInt(uniqueAmount),
+            config: {
+              position,
+              preset,
+              fit_mode: fitMode,
+            },
+          }),
+        }
+      );
 
       const batchData = await batchRes.json();
       setJobStatus({
@@ -171,7 +186,7 @@ export default function CreatePage() {
         status: "pending",
         progress: 0,
         message: batchData.message,
-        output_files: []
+        output_files: [],
       });
     } catch (error) {
       console.error("Error starting batch:", error);
@@ -190,8 +205,20 @@ export default function CreatePage() {
     }
   };
 
-  const getTextPresetStyle = () => {
+  const getTextPresetStyle = (preset: string = "") => {
     switch (preset) {
+      // --- NUEVOS ---
+      case "instagram1": // Roboto, blanco, sombra suave
+        return `${fontRoboto.className} font-bold  text-white text-2xl drop-shadow-[0_1.5px_1.5px_rgba(0,0,0,0.40)]`;
+
+      case "instagram2": // Roboto, pill negro
+        return `${fontRoboto.className} font-bold text-white text-2xl bg-black/95 rounded-xl px-3 py-1 drop-shadow-[0_1.5px_2.5px_rgba(0,0,0,0.35)]`;
+
+      case "tiktok": // Inter, caption con contorno negro
+        // Outline simulado con múltiples text-shadows (Tailwind arbitrary property)
+        return `${fontInter.className} font-semibold text-white text-2xl [text-shadow:_0_1px_0_#000,_0_-1px_0_#000,_1px_0_0_#000,_-1px_0_0_#000,_1px_1px_0_#000,_-1px_1px_0_#000,_1px_-1px_0_#000,_-1px_-1px_0_#000]`;
+
+      // --- TUS EXISTENTES ---
       case "bold":
         return "font-black text-2xl text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]";
       case "clean":
@@ -234,7 +261,9 @@ export default function CreatePage() {
                 label="Video Folder"
                 placeholder="Choose video folder"
                 selectedKeys={selectedVideoFolder ? [selectedVideoFolder] : []}
-                onSelectionChange={(keys) => setSelectedVideoFolder(Array.from(keys)[0] as string)}
+                onSelectionChange={(keys) =>
+                  setSelectedVideoFolder(Array.from(keys)[0] as string)
+                }
                 size="sm"
               >
                 {videoFolders.map((folder) => (
@@ -248,7 +277,9 @@ export default function CreatePage() {
                 label="Audio Folder"
                 placeholder="Choose audio folder"
                 selectedKeys={selectedAudioFolder ? [selectedAudioFolder] : []}
-                onSelectionChange={(keys) => setSelectedAudioFolder(Array.from(keys)[0] as string)}
+                onSelectionChange={(keys) =>
+                  setSelectedAudioFolder(Array.from(keys)[0] as string)
+                }
                 size="sm"
               >
                 {audioFolders.map((folder) => (
@@ -262,7 +293,9 @@ export default function CreatePage() {
                 label="Text CSV File"
                 placeholder="Choose CSV file"
                 selectedKeys={selectedCSV ? [selectedCSV] : []}
-                onSelectionChange={(keys) => setSelectedCSV(Array.from(keys)[0] as string)}
+                onSelectionChange={(keys) =>
+                  setSelectedCSV(Array.from(keys)[0] as string)
+                }
                 size="sm"
               >
                 {csvFiles.map((csv) => (
@@ -285,7 +318,9 @@ export default function CreatePage() {
                 <Select
                   label="Text Position"
                   selectedKeys={[position]}
-                  onSelectionChange={(keys) => setPosition(Array.from(keys)[0] as string)}
+                  onSelectionChange={(keys) =>
+                    setPosition(Array.from(keys)[0] as string)
+                  }
                   size="sm"
                 >
                   <SelectItem key="center">Center</SelectItem>
@@ -296,9 +331,14 @@ export default function CreatePage() {
                 <Select
                   label="Text Preset"
                   selectedKeys={[preset]}
-                  onSelectionChange={(keys) => setPreset(Array.from(keys)[0] as string)}
+                  onSelectionChange={(keys) =>
+                    setPreset(Array.from(keys)[0] as string)
+                  }
                   size="sm"
                 >
+                  <SelectItem key="instagram1">Instagram 1</SelectItem>
+                  <SelectItem key="instagram2">Instagram 2</SelectItem>
+                  <SelectItem key="tiktok">Tiktok</SelectItem>
                   <SelectItem key="bold">Bold</SelectItem>
                   <SelectItem key="clean">Clean</SelectItem>
                   <SelectItem key="subtle">Subtle</SelectItem>
@@ -309,7 +349,9 @@ export default function CreatePage() {
                 <Select
                   label="Fit Mode"
                   selectedKeys={[fitMode]}
-                  onSelectionChange={(keys) => setFitMode(Array.from(keys)[0] as string)}
+                  onSelectionChange={(keys) =>
+                    setFitMode(Array.from(keys)[0] as string)
+                  }
                   size="sm"
                 >
                   <SelectItem key="cover">Cover</SelectItem>
@@ -342,9 +384,13 @@ export default function CreatePage() {
                       <span className="text-sm font-medium">Status:</span>
                       <Chip
                         color={
-                          jobStatus.status === "completed" ? "success" :
-                          jobStatus.status === "failed" ? "danger" :
-                          jobStatus.status === "processing" ? "primary" : "default"
+                          jobStatus.status === "completed"
+                            ? "success"
+                            : jobStatus.status === "failed"
+                              ? "danger"
+                              : jobStatus.status === "processing"
+                                ? "primary"
+                                : "default"
                         }
                         size="sm"
                       >
@@ -355,13 +401,18 @@ export default function CreatePage() {
                     <Progress
                       value={jobStatus.progress}
                       color={
-                        jobStatus.status === "completed" ? "success" :
-                        jobStatus.status === "failed" ? "danger" : "primary"
+                        jobStatus.status === "completed"
+                          ? "success"
+                          : jobStatus.status === "failed"
+                            ? "danger"
+                            : "primary"
                       }
                       size="sm"
                     />
 
-                    <p className="text-xs text-default-500">{jobStatus.message}</p>
+                    <p className="text-xs text-default-500">
+                      {jobStatus.message}
+                    </p>
 
                     {jobStatus.output_files.length > 0 && (
                       <div>
@@ -373,7 +424,9 @@ export default function CreatePage() {
                             <div key={i}>{file.split("/").pop()}</div>
                           ))}
                           {jobStatus.output_files.length > 3 && (
-                            <div>... and {jobStatus.output_files.length - 3} more</div>
+                            <div>
+                              ... and {jobStatus.output_files.length - 3} more
+                            </div>
                           )}
                         </div>
                       </div>
@@ -396,6 +449,19 @@ export default function CreatePage() {
             </CardBody>
           </Card>
 
+          {/* Video Folder Name Card */}
+          <Card>
+            <CardHeader>
+              <h2 className="font-semibold">Output Project Name</h2>
+            </CardHeader>
+            <Divider />
+            <CardBody className="">
+              <Input
+                placeholder="Cute Dog Channel "
+              />
+            </CardBody>
+          </Card>
+
           {/* Start Processing Button */}
           <Button
             color="primary"
@@ -403,7 +469,9 @@ export default function CreatePage() {
             className="w-full"
             onPress={handleStartBatch}
             isLoading={processing}
-            isDisabled={!selectedVideoFolder || !selectedAudioFolder || !selectedCSV}
+            isDisabled={
+              !selectedVideoFolder || !selectedAudioFolder || !selectedCSV
+            }
           >
             Start Batch Processing
           </Button>
@@ -417,7 +485,7 @@ export default function CreatePage() {
             </CardHeader>
             <Divider />
             <CardBody>
-              <div className="relative aspect-[9/16] bg-gradient-to-br from-gray-900 to-gray-800 rounded-lg overflow-hidden shadow-lg">
+              <div className="relative aspect-[9/16] max-h-[75vh] bg-gradient-to-br from-gray-900 to-gray-800 rounded-lg overflow-hidden shadow-lg">
                 {/* Video background */}
                 {previewVideoSrc ? (
                   <video
@@ -436,7 +504,7 @@ export default function CreatePage() {
                             key={i}
                             className="border border-white/10"
                             style={{
-                              background: `linear-gradient(${45 + i * 20}deg, rgba(139, 92, 246, 0.3), rgba(236, 72, 153, 0.3))`
+                              background: `linear-gradient(${45 + i * 20}deg, rgba(139, 92, 246, 0.3), rgba(236, 72, 153, 0.3))`,
                             }}
                           />
                         ))}
@@ -446,9 +514,13 @@ export default function CreatePage() {
                 )}
 
                 {/* Text overlay with live preview */}
-                <div className={`absolute inset-0 flex justify-center ${getTextPositionStyle()} p-4`}>
+                <div
+                  className={`absolute inset-0 flex justify-center ${getTextPositionStyle()} p-4`}
+                >
                   <div className="text-center max-w-[85%]">
-                    <p className={`${getTextPresetStyle()} leading-tight`}>
+                    <p
+                      className={`${getTextPresetStyle(preset)} leading-tight `}
+                    >
                       Sample Text
                     </p>
                   </div>
@@ -456,7 +528,12 @@ export default function CreatePage() {
 
                 {/* Preview label */}
                 <div className="absolute top-2 right-2">
-                  <Chip size="sm" variant="flat" color="default" className="text-xs">
+                  <Chip
+                    size="sm"
+                    variant="flat"
+                    color="default"
+                    className="text-xs"
+                  >
                     Live
                   </Chip>
                 </div>

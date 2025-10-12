@@ -19,11 +19,11 @@ import {
 } from "iconsax-reactjs";
 
 const libraryItems = [
+  { name: "Projects", icon: Folder, href: "/dashboard/projects" },
   { name: "Videos", icon: VideoSquare, href: "/dashboard/videos" },
   { name: "Audios", icon: AudioSquare, href: "/dashboard/audios" },
   { name: "Texts", icon: DocumentText, href: "/dashboard/texts" },
-  { name: "Projects", icon: Folder, href: "/dashboard/projects" },
-  { name: "Community", icon: Star1, href: "/dashboard/community" },
+/*   { name: "Community", icon: Star1, href: "/dashboard/community" }, */
 ];
 
 const generateItems = [
@@ -142,15 +142,15 @@ export const Sidebar = () => {
           {libraryItems.map(renderNavItem)}
         </div>
 
-        <Divider />
+{/*         <Divider /> */}
 
         {/* Generate Section */}
-        <div className="space-y-1">
+{/*         <div className="space-y-1">
           <p className="px-3 text-xs font-semibold text-default-400 uppercase tracking-wider mb-2">
             Generate
           </p>
           {generateItems.map(renderNavItem)}
-        </div>
+        </div> */}
       </nav>
 
 
@@ -167,13 +167,13 @@ export const Sidebar = () => {
           <Avatar
             isBordered
             color="primary"
-            name="Francisco"
+            name="JhonDoe"
             size="sm"
-            src="https://i.pravatar.cc/150?u=francisco"
+            src="https://i.pravatar.cc/150?u=JhonDoe"
           />
           <div className="flex-1">
-            <p className="text-sm font-medium">Francisco</p>
-            <p className="text-xs text-default-500">francisco@email.com</p>
+            <p className="text-sm font-medium">Jhon</p>
+            <p className="text-xs text-default-500">JhonDoe@email.com</p>
           </div>
         </div>
       </div>

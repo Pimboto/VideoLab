@@ -16,16 +16,20 @@ import BlurText from "./BlurText";
 import { useTheme } from "next-themes";
 
 export default function Hero() {
+  const { theme } = useTheme();
+
   return (
     <div className="relative min-h-screen overflow-hidden">
-      {/* Fondo Silk */}
+      {/* Fondo DarkVeil */}
       <div className="absolute inset-0 z-0">
-       {/*  <Silk
-          speed={5}
-          scale={1}
-          color="#7c3aed"
-          noiseIntensity={1.5}
-          rotation={0}
+        {/* <DarkVeil
+          speed={0.5}
+          noiseIntensity={0.02}
+          scanlineIntensity={0}
+          hueShift={theme === "dark" ? 0 : 180}
+          scanlineFrequency={0}
+          warpAmount={0.3}
+          resolutionScale={0.8}
         /> */}
         <div className="absolute inset-0 bg-gradient-to-br from-background/90 via-background/70 to-background/90" />
       </div>
@@ -43,12 +47,13 @@ export default function Hero() {
             </Chip>
           </div>
 
-          <h1 className={title({ size: "lg" })}>
-            Create Different Videos{" "}
-            <span className={title({ color: "violet", size: "lg" })}>
-              from One Source
-            </span>
-          </h1>
+          <BlurText
+            text="Create Different Videos from One Source"
+            delay={100}
+            animateBy="words"
+            direction="top"
+            className={title({ size: "lg" })}
+          />
 
           <p className={subtitle({ class: "mt-6 text-lg max-w-2xl mx-auto" })}>
             Combine videos, text, and audio automatically. Process hundreds of
