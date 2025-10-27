@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from pathlib import Path
 import os
 
-from core.dependencies import get_file_service
+from core.dependencies import get_file_service, get_current_user
 from schemas.file_schemas import (
     FileDeleteRequest,
     FileDeleteResponse,
@@ -25,10 +25,13 @@ router = APIRouter(prefix="/files", tags=["files"])
 async def upload_video(
     file: UploadFile = File(...),
     subfolder: str | None = Form(default=None),
+    current_user: dict = Depends(get_current_user),
     file_service: FileService = Depends(get_file_service),
 ) -> FileUploadResponse:
     """
     Upload a video file.
+
+    Requires authentication.
 
     - **file**: Video file to upload
     - **subfolder**: Optional subfolder for organization (sent as form data)
@@ -40,10 +43,13 @@ async def upload_video(
 async def upload_audio(
     file: UploadFile = File(...),
     subfolder: str | None = Form(default=None),
+    current_user: dict = Depends(get_current_user),
     file_service: FileService = Depends(get_file_service),
 ) -> FileUploadResponse:
     """
     Upload an audio file.
+
+    Requires authentication.
 
     - **file**: Audio file to upload
     - **subfolder**: Optional subfolder for organization (sent as form data)
@@ -55,10 +61,13 @@ async def upload_audio(
 async def upload_csv(
     file: UploadFile = File(...),
     save_file: bool = Query(default=True),
+    current_user: dict = Depends(get_current_user),
     file_service: FileService = Depends(get_file_service),
 ) -> TextCombinationsResponse:
     """
     Upload and parse a CSV file.
+
+    Requires authentication.
 
     - **file**: CSV file to upload and parse
     - **save_file**: Whether to save the file to storage
@@ -69,10 +78,13 @@ async def upload_csv(
 @router.get("/videos", response_model=FileListResponse)
 def list_videos(
     subfolder: str | None = Query(default=None),
+    current_user: dict = Depends(get_current_user),
     file_service: FileService = Depends(get_file_service),
 ) -> FileListResponse:
     """
     List all video files with detailed information.
+
+    Requires authentication.
 
     - **subfolder**: Optional subfolder filter
     """
@@ -82,10 +94,13 @@ def list_videos(
 @router.get("/audios", response_model=FileListResponse)
 def list_audios(
     subfolder: str | None = Query(default=None),
+    current_user: dict = Depends(get_current_user),
     file_service: FileService = Depends(get_file_service),
 ) -> FileListResponse:
     """
     List all audio files with detailed information.
+
+    Requires authentication.
 
     - **subfolder**: Optional subfolder filter
     """
@@ -94,17 +109,27 @@ def list_audios(
 
 @router.get("/csv", response_model=FileListResponse)
 def list_csvs(
+    current_user: dict = Depends(get_current_user),
     file_service: FileService = Depends(get_file_service),
 ) -> FileListResponse:
-    """List all saved CSV files with detailed information."""
+    """
+    List all saved CSV files with detailed information.
+    
+    Requires authentication.
+    """
     return file_service.list_csvs()
 
 
 @router.get("/outputs", response_model=FileListResponse)
 def list_outputs(
+    current_user: dict = Depends(get_current_user),
     file_service: FileService = Depends(get_file_service),
 ) -> FileListResponse:
-    """List all processed/output video files."""
+    """
+    List all processed/output video files.
+    
+    Requires authentication.
+    """
     import os
     from datetime import datetime
 
@@ -140,10 +165,13 @@ def list_outputs(
 @router.delete("/delete", response_model=FileDeleteResponse)
 def delete_file(
     request: FileDeleteRequest,
+    current_user: dict = Depends(get_current_user),
     file_service: FileService = Depends(get_file_service),
 ) -> FileDeleteResponse:
     """
     Delete a file.
+
+    Requires authentication.
 
     - **filepath**: Absolute path to file to delete
     """
@@ -153,10 +181,13 @@ def delete_file(
 @router.post("/move", response_model=FileMoveResponse)
 def move_file(
     request: FileMoveRequest,
+    current_user: dict = Depends(get_current_user),
     file_service: FileService = Depends(get_file_service),
 ) -> FileMoveResponse:
     """
     Move a file to another folder.
+
+    Requires authentication.
 
     - **source_path**: Source file path
     - **destination_folder**: Destination folder path
@@ -165,9 +196,14 @@ def move_file(
 
 
 @router.get("/stream/video")
-async def stream_video(filepath: str = Query(...)):
+async def stream_video(
+    filepath: str = Query(...),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Stream a video file with range support for seeking.
+
+    Requires authentication.
 
     - **filepath**: Absolute path to the video file
     """
@@ -198,9 +234,14 @@ async def stream_video(filepath: str = Query(...)):
 
 
 @router.get("/stream/audio")
-async def stream_audio(filepath: str = Query(...)):
+async def stream_audio(
+    filepath: str = Query(...),
+    current_user: dict = Depends(get_current_user),
+):
     """
     Stream an audio file.
+
+    Requires authentication.
 
     - **filepath**: Absolute path to the audio file
     """
@@ -232,10 +273,13 @@ async def stream_audio(filepath: str = Query(...)):
 @router.get("/preview/csv", response_model=TextCombinationsResponse)
 async def preview_csv(
     filepath: str = Query(...),
+    current_user: dict = Depends(get_current_user),
     file_service: FileService = Depends(get_file_service),
 ) -> TextCombinationsResponse:
     """
     Preview a CSV file without uploading.
+
+    Requires authentication.
 
     - **filepath**: Absolute path to the CSV file
     """
