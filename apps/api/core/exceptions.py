@@ -71,3 +71,15 @@ class StorageError(VideoProcessorException):
     """Raised when storage operation fails"""
 
     pass
+
+
+class UnauthorizedError(VideoProcessorException):
+    """Raised when authentication fails (401)"""
+
+    pass
+
+
+class ForbiddenError(VideoProcessorException):
+    """Raised when user doesn't have permission to access resource (403)"""
+
+    pass

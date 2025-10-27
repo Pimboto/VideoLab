@@ -9,7 +9,10 @@
       "Bash(curl:*)",
       "Bash(netstat:*)",
       "Bash(findstr:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(tree:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pip install:*)"
     ],
     "deny": [],
     "ask": []

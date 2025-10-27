@@ -13,11 +13,13 @@ from core.exceptions import (
     FileSizeLimitError,
     FolderAlreadyExistsError,
     FolderNotFoundError,
+    ForbiddenError,
     InvalidCategoryError,
     InvalidFileTypeError,
     JobNotFoundError,
     ProcessingError,
     StorageError,
+    UnauthorizedError,
     ValidationError,
     VideoProcessorException,
 )
@@ -67,14 +69,21 @@ def create_exception_handler(
 
 # Exception handlers mapping
 exception_handlers = {
+    # Authentication errors
+    UnauthorizedError: create_exception_handler(status.HTTP_401_UNAUTHORIZED),
+    ForbiddenError: create_exception_handler(status.HTTP_403_FORBIDDEN),
+    # Not found errors
     FileNotFoundError: create_exception_handler(status.HTTP_404_NOT_FOUND),
     FolderNotFoundError: create_exception_handler(status.HTTP_404_NOT_FOUND),
     JobNotFoundError: create_exception_handler(status.HTTP_404_NOT_FOUND),
+    # Bad request errors
     InvalidFileTypeError: create_exception_handler(status.HTTP_400_BAD_REQUEST),
     FileSizeLimitError: create_exception_handler(status.HTTP_400_BAD_REQUEST),
     FolderAlreadyExistsError: create_exception_handler(status.HTTP_400_BAD_REQUEST),
     InvalidCategoryError: create_exception_handler(status.HTTP_400_BAD_REQUEST),
+    # Validation errors
     ValidationError: create_exception_handler(status.HTTP_422_UNPROCESSABLE_ENTITY),
+    # Server errors
     ProcessingError: create_exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR),
     StorageError: create_exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR),
 }

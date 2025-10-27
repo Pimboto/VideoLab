@@ -35,6 +35,19 @@ class Settings(BaseSettings):
         alias="ALLOWED_ORIGINS",
     )
 
+    # Clerk Authentication
+    clerk_publishable_key: str = Field(..., alias="CLERK_PUBLISHABLE_KEY")
+    clerk_secret_key: str = Field(..., alias="CLERK_SECRET_KEY")
+    clerk_jwks_url: str = Field(
+        default="https://api.clerk.com/v1/jwks",
+        alias="CLERK_JWKS_URL"
+    )
+
+    # Supabase Configuration
+    supabase_url: str = Field(..., alias="SUPABASE_URL")
+    supabase_anon_key: str = Field(..., alias="SUPABASE_ANON_KEY")
+    supabase_service_role_key: str = Field(..., alias="SUPABASE_SERVICE_ROLE_KEY")
+
     # Storage Configuration
     storage_base_dir: Path = Field(default=Path("D:/Work/video"), alias="STORAGE_DIR")
 

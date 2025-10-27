@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.config import get_settings
 from core.dependencies import get_job_service
 from middleware.error_handler import ErrorHandlerMiddleware, exception_handlers
-from routers import files, folders, processing
+from routers import files, folders, processing, auth
 
 # Configure logging
 logging.basicConfig(
@@ -73,6 +73,7 @@ def create_app() -> FastAPI:
         app.add_exception_handler(exc_class, handler)
 
     # Include routers
+    app.include_router(auth.router, prefix=settings.api_prefix)
     app.include_router(files.router, prefix=settings.api_prefix)
     app.include_router(folders.router, prefix=settings.api_prefix)
     app.include_router(processing.router, prefix=settings.api_prefix)

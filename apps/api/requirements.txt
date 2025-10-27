@@ -16,5 +16,12 @@ numpy==2.1.3
 Pillow==10.4.0
 moviepy==2.1.1
 
-# Testing
+# HTTP client
 requests==2.32.3
+
+# Authentication (Clerk JWT verification)
+pyjwt==2.8.0
+cryptography==42.0.5
+
+# Database (Supabase)
+supabase==2.10.0
