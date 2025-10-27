@@ -5,7 +5,7 @@ from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Path
 
-from core.dependencies import get_job_service, get_processing_service
+from core.dependencies import get_job_service, get_processing_service, get_current_user
 from schemas.job_schemas import BatchJobResponse, JobDeleteResponse, JobStatus
 from schemas.processing_schemas import (
     AudioListRequest,
@@ -25,10 +25,13 @@ router = APIRouter(prefix="/processing", tags=["processing"])
 @router.post("/list-videos", response_model=VideoListResponse)
 def list_videos(
     request: VideoListRequest,
+    current_user: dict = Depends(get_current_user),
     processing_service: ProcessingService = Depends(get_processing_service),
 ) -> VideoListResponse:
     """
     List all video files in a folder.
+
+    Requires authentication.
 
     - **folder_path**: Absolute path to video folder
     """
@@ -38,10 +41,13 @@ def list_videos(
 @router.post("/list-audios", response_model=AudioListResponse)
 def list_audios(
     request: AudioListRequest,
+    current_user: dict = Depends(get_current_user),
     processing_service: ProcessingService = Depends(get_processing_service),
 ) -> AudioListResponse:
     """
     List all audio files in a folder.
+
+    Requires authentication.
 
     - **folder_path**: Absolute path to audio folder
     """
@@ -50,9 +56,14 @@ def list_audios(
 
 @router.get("/default-config", response_model=ProcessingConfig)
 def get_default_config(
+    current_user: dict = Depends(get_current_user),
     processing_service: ProcessingService = Depends(get_processing_service),
 ) -> ProcessingConfig:
-    """Get default processing configuration"""
+    """
+    Get default processing configuration.
+    
+    Requires authentication.
+    """
     cfg = processing_service.get_default_config()
     return ProcessingConfig(**cfg)
 
@@ -61,11 +72,14 @@ def get_default_config(
 async def process_single_video(
     request: SingleProcessRequest = Body(...),
     background_tasks: BackgroundTasks = BackgroundTasks(),
+    current_user: dict = Depends(get_current_user),
     job_service: JobService = Depends(get_job_service),
     processing_service: ProcessingService = Depends(get_processing_service),
 ) -> JobStatus:
     """
     Process a single video with text and audio.
+
+    Requires authentication.
 
     Creates a background job and returns immediately.
     Use the job_id to poll for status.
@@ -95,11 +109,14 @@ async def process_single_video(
 async def process_batch_videos(
     request: BatchProcessRequest = Body(...),
     background_tasks: BackgroundTasks = BackgroundTasks(),
+    current_user: dict = Depends(get_current_user),
     job_service: JobService = Depends(get_job_service),
     processing_service: ProcessingService = Depends(get_processing_service),
 ) -> BatchJobResponse:
     """
     Process multiple videos in batch.
+
+    Requires authentication.
 
     Creates a background job and returns immediately.
     Use the job_id to poll for status.
@@ -158,10 +175,13 @@ async def process_batch_videos(
 @router.get("/status/{job_id}", response_model=JobStatus)
 def get_job_status(
     job_id: str = Path(..., description="Job ID to query"),
+    current_user: dict = Depends(get_current_user),
     job_service: JobService = Depends(get_job_service),
 ) -> JobStatus:
     """
     Get the status of a processing job.
+
+    Requires authentication.
 
     - **job_id**: Unique job identifier
     """
@@ -170,19 +190,27 @@ def get_job_status(
 
 @router.get("/jobs", response_model=List[JobStatus])
 def list_all_jobs(
+    current_user: dict = Depends(get_current_user),
     job_service: JobService = Depends(get_job_service),
 ) -> List[JobStatus]:
-    """List all processing jobs and their statuses"""
+    """
+    List all processing jobs and their statuses.
+    
+    Requires authentication.
+    """
     return job_service.list_jobs()
 
 
 @router.delete("/jobs/{job_id}", response_model=JobDeleteResponse)
 def delete_job(
     job_id: str = Path(..., description="Job ID to delete"),
+    current_user: dict = Depends(get_current_user),
     job_service: JobService = Depends(get_job_service),
 ) -> JobDeleteResponse:
     """
     Delete a job from tracking.
+
+    Requires authentication.
 
     Note: This doesn't stop processing if job is already running.
 
