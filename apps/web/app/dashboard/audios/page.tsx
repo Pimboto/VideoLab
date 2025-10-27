@@ -1,18 +1,18 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Button } from "@heroui/button";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Select, SelectItem } from "@heroui/select";
 import { Input } from "@heroui/input";
 import type { Selection } from "@heroui/table";
-import { Edit, Trash } from "iconsax-reactjs";
 
 import FileTable from "@/components/Dashboard/FileTable";
 import FolderSidebar from "@/components/Dashboard/FolderSidebar";
 import BulkActions from "@/components/Dashboard/BulkActions";
-import { API_URL, delay } from "@/lib/utils";
 import type { AudioFile, Folder } from "@/lib/types";
+import { useFiles, useFolders, useUpload, useToast } from "@/lib/hooks";
 
 const AUDIO_COLUMNS = [
   { key: "name", label: "NAME" },
@@ -22,11 +22,16 @@ const AUDIO_COLUMNS = [
 ] as const;
 
 export default function AudiosPage() {
+  const { getToken } = useAuth();
+  const { listFiles, deleteFile, getAudioStreamUrl } = useFiles();
+  const { listFolders, createFolder } = useFolders();
+  const { uploadFile, uploadProgress, isUploading } = useUpload();
+  const toast = useToast();
+
   const [folders, setFolders] = useState<Folder[]>([]);
   const [audios, setAudios] = useState<AudioFile[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [selectedAudios, setSelectedAudios] = useState<Selection>(new Set());
 
   const { isOpen: isUploadOpen, onOpen: onUploadOpen, onClose: onUploadClose } = useDisclosure();
@@ -46,135 +51,77 @@ export default function AudiosPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedFolder) {
-      loadAudios(selectedFolder);
-    } else {
-      loadAllAudios();
-    }
+    loadAllAudios();
   }, [selectedFolder]);
 
   const loadFolders = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/video-processor/folders/audios`);
-      const data = await res.json();
-      setFolders(data.folders || []);
-    } catch (error) {
-      console.error("Error loading folders:", error);
+    const response = await listFolders("audios");
+    if (response) {
+      setFolders(response.folders);
+    } else {
+      toast.error("Failed to load folders");
     }
   };
 
   const loadAllAudios = async () => {
     setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/api/video-processor/files/audios`);
-      const data = await res.json();
-      setAudios(data.files || []);
-      setSelectedAudios(new Set<string>());
-    } catch (error) {
-      console.error("Error loading audios:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const response = await listFiles("audios");
+    setLoading(false);
 
-  const loadAudios = async (folder: string) => {
-    setLoading(true);
-    try {
-      const params = `?subfolder=${folder}`;
-      const res = await fetch(`${API_URL}/api/video-processor/files/audios${params}`);
-      const data = await res.json();
-      setAudios(data.files || []);
+    if (response) {
+      setAudios(response.files as unknown as AudioFile[]);
       setSelectedAudios(new Set<string>());
-    } catch (error) {
-      console.error("Error loading audios:", error);
-    } finally {
-      setLoading(false);
+    } else {
+      toast.error("Failed to load audio files");
     }
   };
 
   const handleCreateFolder = async (folderName: string) => {
-    try {
-      const res = await fetch(`${API_URL}/api/video-processor/folders/create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          parent_category: "audios",
-          folder_name: folderName
-        })
-      });
-
-      if (res.ok) {
-        loadFolders();
-      }
-    } catch (error) {
-      console.error("Error creating folder:", error);
+    const result = await createFolder("audios", folderName);
+    if (result) {
+      toast.success("Folder created successfully");
+      loadFolders();
+    } else {
+      toast.error("Failed to create folder");
     }
   };
 
   const handleRenameFolder = async (oldName: string, newName: string) => {
-    console.log("Rename folder:", oldName, "to", newName);
-    await delay(500);
-    loadFolders();
+    toast.info("Folder rename not yet implemented");
   };
 
   const handleDeleteFolder = async (folderName: string) => {
-    console.log("Delete folder:", folderName);
-    await delay(500);
-    loadFolders();
+    toast.info("Folder delete not yet implemented");
   };
 
   const handleUpload = async () => {
     if (!selectedFile || !uploadFolder) return;
 
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-      formData.append("subfolder", uploadFolder);
+    const result = await uploadFile(selectedFile, "audio", uploadFolder);
 
-      const res = await fetch(`${API_URL}/api/video-processor/files/upload/audio`, {
-        method: "POST",
-        body: formData
-      });
-
-      if (res.ok) {
-        setSelectedFile(null);
-        setUploadFolder("");
-        onUploadClose();
-        loadFolders();
-        if (selectedFolder) {
-          loadAudios(selectedFolder);
-        } else {
-          loadAllAudios();
-        }
-      }
-    } catch (error) {
-      console.error("Error uploading audio:", error);
-    } finally {
-      setUploading(false);
+    if (result.success) {
+      toast.success("Audio uploaded successfully");
+      setSelectedFile(null);
+      setUploadFolder("");
+      onUploadClose();
+      loadFolders();
+      loadAllAudios();
+    } else {
+      toast.error(result.error || "Failed to upload audio");
     }
   };
 
   const handleDelete = async (audio: AudioFile) => {
-    if (!confirm(`Delete ${audio.filename}?`)) return;
+    if (!confirm(`Delete ${getDisplayName(audio)}?`)) return;
 
-    try {
-      const res = await fetch(`${API_URL}/api/video-processor/files/delete`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filepath: audio.filepath })
-      });
+    const success = await deleteFile(audio.filepath);
 
-      if (res.ok) {
-        loadFolders();
-        if (selectedFolder) {
-          loadAudios(selectedFolder);
-        } else {
-          loadAllAudios();
-        }
-      }
-    } catch (error) {
-      console.error("Error deleting audio:", error);
+    if (success) {
+      toast.success("Audio deleted successfully");
+      loadFolders();
+      loadAllAudios();
+    } else {
+      toast.error("Failed to delete audio");
     }
   };
 
@@ -183,93 +130,34 @@ export default function AudiosPage() {
     if (selection.length === 0) return;
     if (!confirm(`Delete ${selection.length} selected audios?`)) return;
 
-    try {
-      const deletePromises = selection.map(filepath =>
-        fetch(`${API_URL}/api/video-processor/files/delete`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filepath })
-        })
-      );
-
-      await Promise.all(deletePromises);
-      setSelectedAudios(new Set<string>());
-      loadFolders();
-      if (selectedFolder) {
-        loadAudios(selectedFolder);
-      } else {
-        loadAllAudios();
-      }
-    } catch (error) {
-      console.error("Error deleting audios:", error);
+    let successCount = 0;
+    for (const filepath of selection) {
+      const success = await deleteFile(filepath as string);
+      if (success) successCount++;
     }
+
+    setSelectedAudios(new Set<string>());
+
+    if (successCount === selection.length) {
+      toast.success(`Deleted ${successCount} audio files successfully`);
+    } else if (successCount > 0) {
+      toast.warning(`Deleted ${successCount} of ${selection.length} audio files`);
+    } else {
+      toast.error("Failed to delete audio files");
+    }
+
+    loadFolders();
+    loadAllAudios();
   };
 
   const handleBulkMove = async () => {
-    const selection = selectedAudios === "all" ? audios.map(a => a.filepath) : Array.from(selectedAudios);
-    if (selection.length === 0 || !moveToFolder) return;
-
-    try {
-      const targetFolder = folders.find(f => f.name === moveToFolder);
-      if (!targetFolder) return;
-
-      const movePromises = selection.map(filepath => {
-        const filename = filepath.split(/[/\\]/).pop() || "";
-        const newPath = `${targetFolder.path}\\${filename}`;
-
-        return fetch(`${API_URL}/api/video-processor/files/move`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            source_path: filepath,
-            destination_folder: newPath
-          })
-        });
-      });
-
-      await Promise.all(movePromises);
-      setSelectedAudios(new Set<string>());
-      setMoveToFolder("");
-      onMoveClose();
-      loadFolders();
-      if (selectedFolder) {
-        loadAudios(selectedFolder);
-      } else {
-        loadAllAudios();
-      }
-    } catch (error) {
-      console.error("Error moving audios:", error);
-    }
+    toast.info("Bulk move not yet implemented");
+    onMoveClose();
   };
 
   const handleRename = async () => {
-    if (!renameAudio || !newName.trim()) return;
-
-    try {
-      const newPath = renameAudio.filepath.replace(renameAudio.filename, newName);
-      const res = await fetch(`${API_URL}/api/video-processor/files/move`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source_path: renameAudio.filepath,
-          destination_folder: newPath
-        })
-      });
-
-      if (res.ok) {
-        setNewName("");
-        setRenameAudio(null);
-        onRenameClose();
-        loadFolders();
-        if (selectedFolder) {
-          loadAudios(selectedFolder);
-        } else {
-          loadAllAudios();
-        }
-      }
-    } catch (error) {
-      console.error("Error renaming audio:", error);
-    }
+    toast.info("Rename not yet implemented");
+    onRenameClose();
   };
 
   const openPreview = (audio: AudioFile) => {
@@ -281,6 +169,10 @@ export default function AudiosPage() {
     setRenameAudio(audio);
     setNewName(audio.filename);
     onRenameOpen();
+  };
+
+  const getDisplayName = (audio: AudioFile): string => {
+    return (audio as any).metadata?.original_filename || audio.filename;
   };
 
   const rowActions = useMemo(() => [
@@ -370,8 +262,6 @@ export default function AudiosPage() {
           <ModalHeader>Upload Audio</ModalHeader>
           <ModalBody>
             <Select
-              id="upload-audio-folder"
-              name="uploadFolder"
               label="Select Folder"
               placeholder="Choose folder"
               selectedKeys={uploadFolder ? [uploadFolder] : []}
@@ -384,21 +274,30 @@ export default function AudiosPage() {
               ))}
             </Select>
             <Input
-              id="upload-audio-file"
-              name="audioFile"
               type="file"
-              accept=".mp3,.wav,.m4a"
+              accept=".mp3,.wav,.m4a,.aac,.flac"
               onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
             />
+            {isUploading && (
+              <div className="mt-2">
+                <p className="text-sm text-default-500 mb-1">Uploading: {uploadProgress}%</p>
+                <div className="w-full bg-default-200 rounded-full h-2">
+                  <div
+                    className="bg-primary h-2 rounded-full transition-all"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={onUploadClose}>
+            <Button variant="light" onPress={onUploadClose} isDisabled={isUploading}>
               Cancel
             </Button>
             <Button
               color="primary"
               onPress={handleUpload}
-              isLoading={uploading}
+              isLoading={isUploading}
               isDisabled={!uploadFolder || !selectedFile}
             >
               Upload
@@ -410,13 +309,13 @@ export default function AudiosPage() {
       {/* Preview Modal */}
       <Modal isOpen={isPreviewOpen} onClose={onPreviewClose} size="2xl">
         <ModalContent>
-          <ModalHeader>{previewAudio?.filename}</ModalHeader>
+          <ModalHeader>{previewAudio ? getDisplayName(previewAudio) : ""}</ModalHeader>
           <ModalBody>
             {previewAudio && (
               <audio
                 controls
                 className="w-full"
-                src={`${API_URL}/api/video-processor/files/stream/audio?filepath=${encodeURIComponent(previewAudio.filepath)}`}
+                src={getAudioStreamUrl(previewAudio.filepath)}
               >
                 Your browser does not support audio playback.
               </audio>
@@ -434,8 +333,6 @@ export default function AudiosPage() {
           <ModalHeader>Rename Audio</ModalHeader>
           <ModalBody>
             <Input
-              id="rename-audio-name"
-              name="newAudioName"
               label="New Name"
               placeholder="Enter new name"
               value={newName}
@@ -459,8 +356,6 @@ export default function AudiosPage() {
           <ModalHeader>Move {getSelectedCount()} Audios</ModalHeader>
           <ModalBody>
             <Select
-              id="move-audio-destination"
-              name="moveDestination"
               label="Destination Folder"
               placeholder="Choose folder"
               selectedKeys={moveToFolder ? [moveToFolder] : []}

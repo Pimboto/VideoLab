@@ -8,6 +8,7 @@ import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from 
 import { Chip } from "@heroui/chip";
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
 import type { Selection } from "@heroui/table";
+import { useAuthFetch } from "@/lib/hooks/useAuthFetch";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -29,6 +30,7 @@ interface OutputFile {
 }
 
 export default function ProjectsPage() {
+  const authFetch = useAuthFetch();
   const [outputs, setOutputs] = useState<OutputFile[]>([]);
   const [folders, setFolders] = useState<string[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string>("all");
@@ -53,7 +55,7 @@ export default function ProjectsPage() {
   const loadOutputs = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/video-processor/files/outputs`);
+      const res = await authFetch(`${API_URL}/api/video-processor/files/outputs`);
       if (res.ok) {
         const data = await res.json();
         setOutputs(data.files || []);
@@ -110,7 +112,7 @@ export default function ProjectsPage() {
     if (!confirm(`Delete ${output.filename}?`)) return;
 
     try {
-      const res = await fetch(`${API_URL}/api/video-processor/files/delete`, {
+      const res = await authFetch(`${API_URL}/api/video-processor/files/delete`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filepath: output.filepath })

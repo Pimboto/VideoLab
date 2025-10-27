@@ -96,6 +96,7 @@ def verify_clerk_token(token: str) -> Dict[str, Any]:
                     "verify_signature": True,
                     "verify_exp": True,
                     "require_exp": True,
+                    "verify_iat": False,  # Allow clock skew tolerance for 'issued at' claim
                 }
             )
         except jwt.ExpiredSignatureError:

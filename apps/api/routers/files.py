@@ -169,7 +169,7 @@ def list_outputs(
 
 
 @router.delete("/delete", response_model=FileDeleteResponse)
-def delete_file(
+async def delete_file(
     request: FileDeleteRequest,
     current_user: dict = Depends(get_current_user),
     file_service: FileService = Depends(get_file_service),
@@ -181,7 +181,8 @@ def delete_file(
 
     - **filepath**: Absolute path to file to delete
     """
-    return file_service.delete_file(request.filepath)
+    user_id = current_user["id"]
+    return await file_service.delete_file_by_path(user_id, request.filepath)
 
 
 @router.post("/move", response_model=FileMoveResponse)
@@ -283,35 +284,66 @@ async def preview_csv(
     file_service: FileService = Depends(get_file_service),
 ) -> TextCombinationsResponse:
     """
-    Preview a CSV file without uploading.
+    Preview a CSV file from Supabase Storage.
 
     Requires authentication.
 
-    - **filepath**: Absolute path to the CSV file
+    - **filepath**: Storage path to the CSV file (e.g., user_id/filename.csv)
     """
-    file_path = Path(filepath)
+    import csv
+    import io
 
-    if not file_path.exists():
+    user_id = current_user["id"]
+
+    # Get file from database
+    supabase = file_service.supabase
+    result = supabase.table("files") \
+        .select("*") \
+        .eq("filepath", filepath) \
+        .eq("user_id", user_id) \
+        .eq("file_type", "csv") \
+        .execute()
+
+    if not result.data or len(result.data) == 0:
         raise HTTPException(status_code=404, detail="CSV file not found")
 
-    if not file_path.is_file():
-        raise HTTPException(status_code=400, detail="Path is not a file")
+    file_data = result.data[0]
 
-    # Read and parse the CSV file
-    import csv
-    combinations = []
-
+    # Download file from Supabase Storage
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            for row in reader:
-                if row:  # Skip empty rows
-                    combinations.append(row)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error parsing CSV: {str(e)}")
+        storage_service = file_service.storage
+        file_content = await storage_service.download_file(
+            category="csv",
+            storage_path=filepath
+        )
 
-    return TextCombinationsResponse(
-        filename=file_path.name,
-        combinations=combinations,
-        count=len(combinations)
-    )
+        # Parse CSV
+        text_content = file_content.decode("utf-8-sig")
+        reader = csv.reader(io.StringIO(text_content))
+
+        combinations = []
+        for row in reader:
+            if row:  # Skip empty rows
+                segs = [c.strip() for c in row if c and c.strip()]
+                if segs:
+                    combinations.append(segs)
+
+        # Get display name from metadata
+        display_name = file_data["filename"]
+        if file_data.get("metadata"):
+            import json
+            try:
+                metadata = json.loads(file_data["metadata"]) if isinstance(file_data["metadata"], str) else file_data["metadata"]
+                display_name = metadata.get("original_filename", file_data["filename"])
+            except:
+                pass
+
+        return TextCombinationsResponse(
+            filename=display_name,
+            combinations=combinations,
+            count=len(combinations),
+            saved=True,
+            filepath=filepath
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error reading CSV: {str(e)}")

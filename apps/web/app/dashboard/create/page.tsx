@@ -11,6 +11,7 @@ import { Progress } from "@heroui/progress";
 import { Chip } from "@heroui/chip";
 import { useRouter } from "next/navigation";
 import { fontRoboto, fontInter } from "@/config/fonts";
+import { useAuthFetch } from "@/lib/hooks/useAuthFetch";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -35,6 +36,7 @@ interface JobStatus {
 }
 
 export default function CreatePage() {
+  const authFetch = useAuthFetch();
   const router = useRouter();
   const [videoFolders, setVideoFolders] = useState<Folder[]>([]);
   const [audioFolders, setAudioFolders] = useState<Folder[]>([]);
@@ -82,9 +84,9 @@ export default function CreatePage() {
   const loadData = async () => {
     try {
       const [vRes, aRes, cRes] = await Promise.all([
-        fetch(`${API_URL}/api/video-processor/folders/videos`),
-        fetch(`${API_URL}/api/video-processor/folders/audios`),
-        fetch(`${API_URL}/api/video-processor/files/csv`),
+        authFetch(`${API_URL}/api/video-processor/folders/videos`),
+        authFetch(`${API_URL}/api/video-processor/folders/audios`),
+        authFetch(`${API_URL}/api/video-processor/files/csv`),
       ]);
 
       const [vData, aData, cData] = await Promise.all([
@@ -111,7 +113,7 @@ export default function CreatePage() {
       if (!folderName) return;
 
       const params = `?subfolder=${folderName}`;
-      const res = await fetch(
+      const res = await authFetch(
         `${API_URL}/api/video-processor/files/videos${params}`
       );
       const data = await res.json();
@@ -129,7 +131,7 @@ export default function CreatePage() {
 
   const checkJobStatus = async (jobId: string) => {
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `${API_URL}/api/video-processor/processing/status/${jobId}`
       );
       const data = await res.json();
@@ -152,14 +154,14 @@ export default function CreatePage() {
     setProcessing(true);
 
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `${API_URL}/api/video-processor/files/preview/csv?filepath=${encodeURIComponent(selectedCSV)}`
       );
 
       const csvData = await res.json();
       const combinations = csvData.combinations || [];
 
-      const batchRes = await fetch(
+      const batchRes = await authFetch(
         `${API_URL}/api/video-processor/processing/process-batch`,
         {
           method: "POST",

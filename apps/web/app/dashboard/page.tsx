@@ -21,10 +21,14 @@ import {
   Image,
   VideoVertical
 } from "iconsax-reactjs";
+import { useAuthFetch } from "@/lib/hooks/useAuthFetch";
+import { useUser } from "@clerk/nextjs";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function DashboardPage() {
+  const authFetch = useAuthFetch();
+  const { user } = useUser();
   const [stats, setStats] = useState({
     videosCount: 0,
     audiosCount: 0,
@@ -104,9 +108,9 @@ export default function DashboardPage() {
   const loadStats = async () => {
     try {
       const [vRes, aRes, cRes] = await Promise.all([
-        fetch(`${API_URL}/api/video-processor/files/videos`),
-        fetch(`${API_URL}/api/video-processor/files/audios`),
-        fetch(`${API_URL}/api/video-processor/files/csv`)
+        authFetch(`${API_URL}/api/video-processor/files/videos`),
+        authFetch(`${API_URL}/api/video-processor/files/audios`),
+        authFetch(`${API_URL}/api/video-processor/files/csv`)
       ]);
 
       const [vData, aData, cData] = await Promise.all([
@@ -155,7 +159,9 @@ export default function DashboardPage() {
     <div className="p-8">
       {/* Hero Section */}
       <div ref={heroRef} className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Welcome back, John Doe</h1>
+        <h1 className="text-3xl font-bold mb-2">
+          Welcome back, {user?.firstName || user?.username || "User"}
+        </h1>
         <p className="text-default-500">Ready to create something amazing?</p>
       </div>
 

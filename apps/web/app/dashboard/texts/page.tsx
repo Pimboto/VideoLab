@@ -1,17 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Card, CardBody } from "@heroui/card";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Chip } from "@heroui/chip";
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
-import { Checkbox } from "@heroui/checkbox";
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
 import type { Selection } from "@heroui/table";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { useFiles, useUpload, useToast } from "@/lib/hooks";
 
 interface CSVFile {
   filename: string;
@@ -19,21 +18,28 @@ interface CSVFile {
   size: number;
   modified: string;
   type: string;
+  metadata?: {
+    original_filename?: string;
+  };
 }
 
 export default function TextsPage() {
+  const { getToken } = useAuth();
+  const { listFiles, deleteFile, getCsvPreviewUrl } = useFiles();
+  const { uploadFile, uploadProgress, isUploading } = useUpload();
+  const toast = useToast();
+
   const [csvFiles, setCsvFiles] = useState<CSVFile[]>([]);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [selectedCSVs, setSelectedCSVs] = useState<Selection>(new Set());
-
-  const { isOpen, onOpen, onClose } = useDisclosure();
-  const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
-
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [combinations, setCombinations] = useState<string[][]>([]);
   const [previewCSV, setPreviewCSV] = useState<CSVFile | null>(null);
   const [previewContent, setPreviewContent] = useState<string[][]>([]);
+  const [loadingPreviewPath, setLoadingPreviewPath] = useState<string | null>(null);
+
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
 
   useEffect(() => {
     loadCSVFiles();
@@ -41,61 +47,42 @@ export default function TextsPage() {
 
   const loadCSVFiles = async () => {
     setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/api/video-processor/files/csv`);
-      const data = await res.json();
-      setCsvFiles(data.files || []);
+    const response = await listFiles("csv");
+    setLoading(false);
+
+    if (response) {
+      setCsvFiles(response.files as unknown as CSVFile[]);
       setSelectedCSVs(new Set<string>());
-    } catch (error) {
-      console.error("Error loading CSV files:", error);
-    } finally {
-      setLoading(false);
+    } else {
+      toast.error("Failed to load CSV files");
     }
   };
 
   const handleUpload = async () => {
     if (!selectedFile) return;
 
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-      formData.append("save_file", "true");
+    const result = await uploadFile(selectedFile, "csv");
 
-      const res = await fetch(`${API_URL}/api/video-processor/files/upload/csv`, {
-        method: "POST",
-        body: formData
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setCombinations(data.combinations || []);
-        setSelectedFile(null);
-        onClose();
-        loadCSVFiles();
-      }
-    } catch (error) {
-      console.error("Error uploading CSV:", error);
-    } finally {
-      setUploading(false);
+    if (result.success) {
+      toast.success("CSV file uploaded successfully");
+      setSelectedFile(null);
+      onClose();
+      loadCSVFiles();
+    } else {
+      toast.error(result.error || "Failed to upload CSV file");
     }
   };
 
   const handleDelete = async (csv: CSVFile) => {
-    if (!confirm(`Delete ${csv.filename}?`)) return;
+    if (!confirm(`Delete ${getDisplayName(csv)}?`)) return;
 
-    try {
-      const res = await fetch(`${API_URL}/api/video-processor/files/delete`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filepath: csv.filepath })
-      });
+    const success = await deleteFile(csv.filepath);
 
-      if (res.ok) {
-        loadCSVFiles();
-      }
-    } catch (error) {
-      console.error("Error deleting CSV:", error);
+    if (success) {
+      toast.success("CSV file deleted successfully");
+      loadCSVFiles();
+    } else {
+      toast.error("Failed to delete CSV file");
     }
   };
 
@@ -104,35 +91,59 @@ export default function TextsPage() {
     if (selection.length === 0) return;
     if (!confirm(`Delete ${selection.length} selected CSV files?`)) return;
 
-    try {
-      const deletePromises = selection.map(filepath =>
-        fetch(`${API_URL}/api/video-processor/files/delete`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filepath })
-        })
-      );
-
-      await Promise.all(deletePromises);
-      setSelectedCSVs(new Set<string>());
-      loadCSVFiles();
-    } catch (error) {
-      console.error("Error deleting CSV files:", error);
+    let successCount = 0;
+    for (const filepath of selection) {
+      const success = await deleteFile(filepath as string);
+      if (success) successCount++;
     }
+
+    setSelectedCSVs(new Set<string>());
+
+    if (successCount === selection.length) {
+      toast.success(`Deleted ${successCount} CSV files successfully`);
+    } else if (successCount > 0) {
+      toast.warning(`Deleted ${successCount} of ${selection.length} CSV files`);
+    } else {
+      toast.error("Failed to delete CSV files");
+    }
+
+    loadCSVFiles();
   };
 
   const openPreview = async (csv: CSVFile) => {
+    setLoadingPreviewPath(csv.filepath);
     try {
-      const res = await fetch(`${API_URL}/api/video-processor/files/preview/csv?filepath=${encodeURIComponent(csv.filepath)}`);
+      const url = getCsvPreviewUrl(csv.filepath);
 
-      if (res.ok) {
-        const data = await res.json();
+      // Get auth token
+      const token = await getToken();
+
+      if (!token) {
+        toast.error("Not authenticated");
+        return;
+      }
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
         setPreviewContent(data.combinations || []);
         setPreviewCSV(csv);
         onPreviewOpen();
+      } else {
+        const errorText = await response.text();
+        console.error("Preview error:", errorText);
+        toast.error("Failed to load CSV preview");
       }
     } catch (error) {
-      console.error("Error loading CSV preview:", error);
+      console.error("Preview exception:", error);
+      toast.error("Error loading CSV preview");
+    } finally {
+      setLoadingPreviewPath(null);
     }
   };
 
@@ -148,6 +159,10 @@ export default function TextsPage() {
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString();
+  };
+
+  const getDisplayName = (csv: CSVFile) => {
+    return csv.metadata?.original_filename || csv.filename;
   };
 
   return (
@@ -186,7 +201,9 @@ export default function TextsPage() {
       )}
 
       {loading ? (
-        <p>Loading...</p>
+        <div className="text-center py-12">
+          <p className="text-default-500">Loading CSV files...</p>
+        </div>
       ) : csvFiles.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-default-400 mb-4">No CSV files uploaded yet</p>
@@ -215,7 +232,7 @@ export default function TextsPage() {
               <TableRow key={csv.filepath}>
                 <TableCell>
                   <div className="max-w-xs">
-                    <p className="text-sm font-medium truncate">{csv.filename}</p>
+                    <p className="text-sm font-medium truncate">{getDisplayName(csv)}</p>
                   </div>
                 </TableCell>
                 <TableCell>
@@ -226,7 +243,13 @@ export default function TextsPage() {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="flat" onPress={() => openPreview(csv)}>
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      onPress={() => openPreview(csv)}
+                      isLoading={loadingPreviewPath === csv.filepath}
+                      isDisabled={loadingPreviewPath !== null && loadingPreviewPath !== csv.filepath}
+                    >
                       Preview
                     </Button>
                     <Dropdown>
@@ -283,12 +306,28 @@ export default function TextsPage() {
               accept=".csv"
               onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
             />
+            {isUploading && (
+              <div className="mt-2">
+                <p className="text-sm text-default-500 mb-1">Uploading: {uploadProgress}%</p>
+                <div className="w-full bg-default-200 rounded-full h-2">
+                  <div
+                    className="bg-primary h-2 rounded-full transition-all"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={onClose}>
+            <Button variant="light" onPress={onClose} isDisabled={isUploading}>
               Cancel
             </Button>
-            <Button color="primary" onPress={handleUpload} isLoading={uploading}>
+            <Button
+              color="primary"
+              onPress={handleUpload}
+              isLoading={isUploading}
+              isDisabled={!selectedFile}
+            >
               Upload
             </Button>
           </ModalFooter>
@@ -297,7 +336,7 @@ export default function TextsPage() {
 
       <Modal isOpen={isPreviewOpen} onClose={onPreviewClose} size="3xl">
         <ModalContent>
-          <ModalHeader>{previewCSV?.filename}</ModalHeader>
+          <ModalHeader>{previewCSV ? getDisplayName(previewCSV) : ""}</ModalHeader>
           <ModalBody>
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {previewContent.slice(0, 20).map((combo, i) => (

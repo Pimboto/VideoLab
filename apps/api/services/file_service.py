@@ -47,10 +47,16 @@ class FileService:
         file_type: str,
         size_bytes: int,
         mime_type: Optional[str] = None,
-        subfolder: Optional[str] = None
+        subfolder: Optional[str] = None,
+        original_filename: Optional[str] = None
     ) -> dict:
         """Create file metadata record in database"""
         try:
+            # Store original filename in metadata
+            metadata = None
+            if original_filename:
+                metadata = {"original_filename": original_filename}
+
             file_data = FileCreate(
                 user_id=user_id,
                 filename=filename,
@@ -58,14 +64,15 @@ class FileService:
                 file_type=file_type,
                 size_bytes=size_bytes,
                 mime_type=mime_type,
-                subfolder=subfolder
+                subfolder=subfolder,
+                metadata=metadata
             )
-            
+
             result = self.supabase.table("files").insert(file_data.model_dump()).execute()
-            
+
             if not result.data or len(result.data) == 0:
                 raise StorageError("Failed to create file metadata in database")
-            
+
             return result.data[0]
         except Exception as e:
             raise StorageError(f"Failed to save file metadata: {str(e)}")
@@ -85,10 +92,10 @@ class FileService:
                 details={"allowed_extensions": list(self.settings.video_extensions)},
             )
 
-        # Get file size
-        await file.seek(0, 2)
-        file_size = await file.tell()
-        await file.seek(0)
+        # Get file size (file.file is the SpooledTemporaryFile)
+        file.file.seek(0, 2)
+        file_size = file.file.tell()
+        file.file.seek(0)
 
         # Validate size
         if not self.storage.validate_file_size(file_size, "video"):
@@ -118,7 +125,8 @@ class FileService:
             file_type="video",
             size_bytes=saved_size,
             mime_type=file.content_type,
-            subfolder=subfolder
+            subfolder=subfolder,
+            original_filename=file.filename
         )
 
         return FileUploadResponse(
@@ -143,10 +151,10 @@ class FileService:
                 details={"allowed_extensions": list(self.settings.audio_extensions)},
             )
 
-        # Get file size
-        await file.seek(0, 2)
-        file_size = await file.tell()
-        await file.seek(0)
+        # Get file size (file.file is the SpooledTemporaryFile)
+        file.file.seek(0, 2)
+        file_size = file.file.tell()
+        file.file.seek(0)
 
         # Validate size
         if not self.storage.validate_file_size(file_size, "audio"):
@@ -176,7 +184,8 @@ class FileService:
             file_type="audio",
             size_bytes=saved_size,
             mime_type=file.content_type,
-            subfolder=subfolder
+            subfolder=subfolder,
+            original_filename=file.filename
         )
 
         return FileUploadResponse(
@@ -200,10 +209,10 @@ class FileService:
                 details={"allowed_extensions": list(self.settings.csv_extensions)},
             )
 
-        # Get file size
-        await file.seek(0, 2)
-        file_size = await file.tell()
-        await file.seek(0)
+        # Get file size (file.file is the SpooledTemporaryFile)
+        file.file.seek(0, 2)
+        file_size = file.file.tell()
+        file.file.seek(0)
 
         # Validate size
         if not self.storage.validate_file_size(file_size, "csv"):
@@ -233,10 +242,11 @@ class FileService:
         if save_file:
             # Generate unique filename
             unique_filename = self.storage.generate_unique_filename(file.filename)
-            
-            # Reset file pointer
-            await file.seek(0)
-            
+
+            # Create new file-like object from content (file was already read)
+            file.file = io.BytesIO(content)
+            file.file.seek(0)
+
             # Upload to Supabase Storage
             storage_path, saved_size = await self.storage.upload_file(
                 user_id=user_id,
@@ -254,7 +264,8 @@ class FileService:
                 file_type="csv",
                 size_bytes=saved_size,
                 mime_type=file.content_type,
-                subfolder=None
+                subfolder=None,
+                original_filename=file.filename
             )
             
             saved_filepath = storage_path
@@ -287,14 +298,24 @@ class FileService:
             
             files = []
             for file_data in result.data:
+                # Parse metadata if it's a JSON string
+                metadata = file_data.get("metadata")
+                if metadata and isinstance(metadata, str):
+                    import json
+                    try:
+                        metadata = json.loads(metadata)
+                    except:
+                        metadata = None
+
                 files.append(FileInfo(
                     filename=file_data["filename"],
                     filepath=file_data["filepath"],
                     size=file_data["size_bytes"],
                     modified=file_data["created_at"],
-                    file_type="video"
+                    file_type="video",
+                    metadata=metadata
                 ))
-            
+
             return FileListResponse(files=files, count=len(files))
         except Exception as e:
             raise StorageError(f"Failed to list videos: {str(e)}")
@@ -318,14 +339,24 @@ class FileService:
             
             files = []
             for file_data in result.data:
+                # Parse metadata if it's a JSON string
+                metadata = file_data.get("metadata")
+                if metadata and isinstance(metadata, str):
+                    import json
+                    try:
+                        metadata = json.loads(metadata)
+                    except:
+                        metadata = None
+
                 files.append(FileInfo(
                     filename=file_data["filename"],
                     filepath=file_data["filepath"],
                     size=file_data["size_bytes"],
                     modified=file_data["created_at"],
-                    file_type="audio"
+                    file_type="audio",
+                    metadata=metadata
                 ))
-            
+
             return FileListResponse(files=files, count=len(files))
         except Exception as e:
             raise StorageError(f"Failed to list audios: {str(e)}")
@@ -345,14 +376,24 @@ class FileService:
             
             files = []
             for file_data in result.data:
+                # Parse metadata if it's a JSON string
+                metadata = file_data.get("metadata")
+                if metadata and isinstance(metadata, str):
+                    import json
+                    try:
+                        metadata = json.loads(metadata)
+                    except:
+                        metadata = None
+
                 files.append(FileInfo(
                     filename=file_data["filename"],
                     filepath=file_data["filepath"],
                     size=file_data["size_bytes"],
                     modified=file_data["created_at"],
-                    file_type="csv"
+                    file_type="csv",
+                    metadata=metadata
                 ))
-            
+
             return FileListResponse(files=files, count=len(files))
         except Exception as e:
             raise StorageError(f"Failed to list CSVs: {str(e)}")
@@ -362,7 +403,7 @@ class FileService:
         user_id: str,
         file_id: str
     ) -> FileDeleteResponse:
-        """Delete a file (from storage and database)"""
+        """Delete a file by ID (from storage and database)"""
         try:
             # Get file metadata
             result = self.supabase.table("files") \
@@ -370,21 +411,68 @@ class FileService:
                 .eq("id", file_id) \
                 .eq("user_id", user_id) \
                 .execute()
-            
+
             if not result.data or len(result.data) == 0:
                 raise FileNotFoundError(f"File not found or access denied")
-            
+
             file_data = result.data[0]
-            
+
             # Delete from storage
             await self.storage.delete_file(
                 category=file_data["file_type"] + "s",  # video -> videos
                 storage_path=file_data["filepath"]
             )
-            
+
             # Delete metadata from database
             self.supabase.table("files").delete().eq("id", file_id).execute()
-            
+
+            return FileDeleteResponse(
+                message="File deleted successfully",
+                filepath=file_data["filepath"]
+            )
+        except FileNotFoundError:
+            raise
+        except Exception as e:
+            raise StorageError(f"Failed to delete file: {str(e)}")
+
+    async def delete_file_by_path(
+        self,
+        user_id: str,
+        filepath: str
+    ) -> FileDeleteResponse:
+        """Delete a file by filepath (from storage and database)"""
+        try:
+            # Get file metadata by filepath
+            result = self.supabase.table("files") \
+                .select("*") \
+                .eq("filepath", filepath) \
+                .eq("user_id", user_id) \
+                .execute()
+
+            if not result.data or len(result.data) == 0:
+                raise FileNotFoundError(f"File not found or access denied")
+
+            file_data = result.data[0]
+
+            # Map file_type to storage category
+            file_type = file_data["file_type"]
+            category_map = {
+                "video": "videos",
+                "audio": "audios",
+                "csv": "csv",
+                "output": "output"
+            }
+            category = category_map.get(file_type, file_type)
+
+            # Delete from storage
+            await self.storage.delete_file(
+                category=category,
+                storage_path=file_data["filepath"]
+            )
+
+            # Delete metadata from database
+            self.supabase.table("files").delete().eq("id", file_data["id"]).execute()
+
             return FileDeleteResponse(
                 message="File deleted successfully",
                 filepath=file_data["filepath"]

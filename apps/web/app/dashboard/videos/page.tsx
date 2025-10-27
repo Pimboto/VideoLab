@@ -13,6 +13,7 @@ import FolderSidebar from "@/components/Dashboard/FolderSidebar";
 import BulkActions from "@/components/Dashboard/BulkActions";
 import { API_URL, delay } from "@/lib/utils";
 import type { VideoFile, Folder } from "@/lib/types";
+import { useAuthFetch } from "@/lib/hooks/useAuthFetch";
 
 const VIDEO_COLUMNS = [
   { key: "preview", label: "PREVIEW" },
@@ -23,6 +24,7 @@ const VIDEO_COLUMNS = [
 ] as const;
 
 export default function VideosPage() {
+  const authFetch = useAuthFetch();
   const [folders, setFolders] = useState<Folder[]>([]);
   const [videos, setVideos] = useState<VideoFile[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
@@ -56,7 +58,7 @@ export default function VideosPage() {
 
   const loadFolders = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/video-processor/folders/videos`);
+      const res = await authFetch(`${API_URL}/api/video-processor/folders/videos`);
       const data = await res.json();
       setFolders(data.folders || []);
     } catch (error) {
@@ -67,7 +69,7 @@ export default function VideosPage() {
   const loadAllVideos = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/video-processor/files/videos`);
+      const res = await authFetch(`${API_URL}/api/video-processor/files/videos`);
       const data = await res.json();
       setVideos(data.files || []);
       setSelectedVideos(new Set<string>());
@@ -82,7 +84,7 @@ export default function VideosPage() {
     setLoading(true);
     try {
       const params = `?subfolder=${folder}`;
-      const res = await fetch(`${API_URL}/api/video-processor/files/videos${params}`);
+      const res = await authFetch(`${API_URL}/api/video-processor/files/videos${params}`);
       const data = await res.json();
       setVideos(data.files || []);
       setSelectedVideos(new Set<string>());
@@ -95,7 +97,7 @@ export default function VideosPage() {
 
   const handleCreateFolder = async (folderName: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/video-processor/folders/create`, {
+      const res = await authFetch(`${API_URL}/api/video-processor/folders/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -135,7 +137,7 @@ export default function VideosPage() {
       formData.append("file", selectedFile);
       formData.append("subfolder", uploadFolder);
 
-      const res = await fetch(`${API_URL}/api/video-processor/files/upload/video`, {
+      const res = await authFetch(`${API_URL}/api/video-processor/files/upload/video`, {
         method: "POST",
         body: formData
       });
@@ -162,7 +164,7 @@ export default function VideosPage() {
     if (!confirm(`Delete ${video.filename}?`)) return;
 
     try {
-      const res = await fetch(`${API_URL}/api/video-processor/files/delete`, {
+      const res = await authFetch(`${API_URL}/api/video-processor/files/delete`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filepath: video.filepath })
@@ -188,7 +190,7 @@ export default function VideosPage() {
 
     try {
       const deletePromises = selection.map(filepath =>
-        fetch(`${API_URL}/api/video-processor/files/delete`, {
+        authFetch(`${API_URL}/api/video-processor/files/delete`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ filepath })
@@ -220,7 +222,7 @@ export default function VideosPage() {
         const filename = filepath.split(/[/\\]/).pop() || "";
         const newPath = `${targetFolder.path}\\${filename}`;
 
-        return fetch(`${API_URL}/api/video-processor/files/move`, {
+        return authFetch(`${API_URL}/api/video-processor/files/move`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -250,7 +252,7 @@ export default function VideosPage() {
 
     try {
       const newPath = renameVideo.filepath.replace(renameVideo.filename, newName);
-      const res = await fetch(`${API_URL}/api/video-processor/files/move`, {
+      const res = await authFetch(`${API_URL}/api/video-processor/files/move`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

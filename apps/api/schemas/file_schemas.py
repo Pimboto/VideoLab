@@ -53,6 +53,7 @@ class FileInfo(BaseModel):
     size: int = Field(..., description="File size in bytes", ge=0)
     modified: datetime = Field(..., description="Last modified timestamp")
     file_type: str = Field(..., description="Type of file (video, audio, csv)")
+    metadata: dict | None = Field(default=None, description="Additional file metadata")
 
 
 class FileUploadResponse(BaseModel):
