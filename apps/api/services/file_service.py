@@ -1,15 +1,22 @@
 """
-File service for file management operations
+File service for file management operations with Supabase Storage and DB
 """
 import csv
 import io
+from typing import List, Optional
 from pathlib import Path
-from typing import List
 
 from fastapi import UploadFile
+from supabase import Client
 
 from core.config import Settings
-from core.exceptions import FileSizeLimitError, InvalidFileTypeError
+from core.exceptions import (
+    FileSizeLimitError,
+    InvalidFileTypeError,
+    FileNotFoundError,
+    StorageError
+)
+from models.file import FileCreate, File
 from schemas.file_schemas import (
     FileDeleteResponse,
     FileInfo,
@@ -21,19 +28,55 @@ from schemas.file_schemas import (
 )
 from schemas.processing_schemas import TextCombinationsResponse
 from services.storage_service import StorageService
+from utils.supabase_client import get_supabase_client
 
 
 class FileService:
-    """Service for file management operations"""
+    """Service for file management operations with Supabase"""
 
     def __init__(self, settings: Settings, storage_service: StorageService):
         self.settings = settings
         self.storage = storage_service
+        self.supabase: Client = get_supabase_client()
+
+    async def _create_file_metadata(
+        self,
+        user_id: str,
+        filename: str,
+        filepath: str,
+        file_type: str,
+        size_bytes: int,
+        mime_type: Optional[str] = None,
+        subfolder: Optional[str] = None
+    ) -> dict:
+        """Create file metadata record in database"""
+        try:
+            file_data = FileCreate(
+                user_id=user_id,
+                filename=filename,
+                filepath=filepath,
+                file_type=file_type,
+                size_bytes=size_bytes,
+                mime_type=mime_type,
+                subfolder=subfolder
+            )
+            
+            result = self.supabase.table("files").insert(file_data.model_dump()).execute()
+            
+            if not result.data or len(result.data) == 0:
+                raise StorageError("Failed to create file metadata in database")
+            
+            return result.data[0]
+        except Exception as e:
+            raise StorageError(f"Failed to save file metadata: {str(e)}")
 
     async def upload_video(
-        self, file: UploadFile, subfolder: str | None = None
+        self,
+        user_id: str,
+        file: UploadFile,
+        subfolder: Optional[str] = None
     ) -> FileUploadResponse:
-        """Upload a video file"""
+        """Upload a video file to Supabase Storage"""
         # Validate extension
         if not self.storage.validate_file_extension(file.filename, "video"):
             allowed = ", ".join(self.settings.video_extensions)
@@ -43,9 +86,9 @@ class FileService:
             )
 
         # Get file size
-        file.file.seek(0, 2)
-        file_size = file.file.tell()
-        file.file.seek(0)
+        await file.seek(0, 2)
+        file_size = await file.tell()
+        await file.seek(0)
 
         # Validate size
         if not self.storage.validate_file_size(file_size, "video"):
@@ -58,25 +101,40 @@ class FileService:
         # Generate unique filename
         unique_filename = self.storage.generate_unique_filename(file.filename)
 
-        # Get destination path
-        destination_dir = self.storage.get_storage_path("videos", subfolder)
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        destination = destination_dir / unique_filename
+        # Upload to Supabase Storage
+        storage_path, saved_size = await self.storage.upload_file(
+            user_id=user_id,
+            category="videos",
+            upload_file=file,
+            subfolder=subfolder,
+            unique_filename=unique_filename
+        )
 
-        # Save file
-        saved_size = await self.storage.save_upload_file(file, destination)
+        # Create metadata record
+        await self._create_file_metadata(
+            user_id=user_id,
+            filename=unique_filename,
+            filepath=storage_path,
+            file_type="video",
+            size_bytes=saved_size,
+            mime_type=file.content_type,
+            subfolder=subfolder
+        )
 
         return FileUploadResponse(
             filename=unique_filename,
-            filepath=str(destination),
+            filepath=storage_path,
             size=saved_size,
-            message=f"Video uploaded successfully to {destination_dir.name}",
+            message=f"Video uploaded successfully",
         )
 
     async def upload_audio(
-        self, file: UploadFile, subfolder: str | None = None
+        self,
+        user_id: str,
+        file: UploadFile,
+        subfolder: Optional[str] = None
     ) -> FileUploadResponse:
-        """Upload an audio file"""
+        """Upload an audio file to Supabase Storage"""
         # Validate extension
         if not self.storage.validate_file_extension(file.filename, "audio"):
             allowed = ", ".join(self.settings.audio_extensions)
@@ -86,9 +144,9 @@ class FileService:
             )
 
         # Get file size
-        file.file.seek(0, 2)
-        file_size = file.file.tell()
-        file.file.seek(0)
+        await file.seek(0, 2)
+        file_size = await file.tell()
+        await file.seek(0)
 
         # Validate size
         if not self.storage.validate_file_size(file_size, "audio"):
@@ -101,23 +159,38 @@ class FileService:
         # Generate unique filename
         unique_filename = self.storage.generate_unique_filename(file.filename)
 
-        # Get destination path
-        destination_dir = self.storage.get_storage_path("audios", subfolder)
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        destination = destination_dir / unique_filename
+        # Upload to Supabase Storage
+        storage_path, saved_size = await self.storage.upload_file(
+            user_id=user_id,
+            category="audios",
+            upload_file=file,
+            subfolder=subfolder,
+            unique_filename=unique_filename
+        )
 
-        # Save file
-        saved_size = await self.storage.save_upload_file(file, destination)
+        # Create metadata record
+        await self._create_file_metadata(
+            user_id=user_id,
+            filename=unique_filename,
+            filepath=storage_path,
+            file_type="audio",
+            size_bytes=saved_size,
+            mime_type=file.content_type,
+            subfolder=subfolder
+        )
 
         return FileUploadResponse(
             filename=unique_filename,
-            filepath=str(destination),
+            filepath=storage_path,
             size=saved_size,
-            message=f"Audio uploaded successfully to {destination_dir.name}",
+            message=f"Audio uploaded successfully",
         )
 
     async def upload_csv(
-        self, file: UploadFile, save_file: bool = True
+        self,
+        user_id: str,
+        file: UploadFile,
+        save_file: bool = True
     ) -> TextCombinationsResponse:
         """Upload and parse a CSV file"""
         # Validate extension
@@ -128,9 +201,9 @@ class FileService:
             )
 
         # Get file size
-        file.file.seek(0, 2)
-        file_size = file.file.tell()
-        file.file.seek(0)
+        await file.seek(0, 2)
+        file_size = await file.tell()
+        await file.seek(0)
 
         # Validate size
         if not self.storage.validate_file_size(file_size, "csv"):
@@ -158,13 +231,33 @@ class FileService:
         filename = file.filename
 
         if save_file:
+            # Generate unique filename
             unique_filename = self.storage.generate_unique_filename(file.filename)
-            destination = self.settings.csv_storage_path / unique_filename
-
-            with destination.open("wb") as f:
-                f.write(content)
-
-            saved_filepath = str(destination)
+            
+            # Reset file pointer
+            await file.seek(0)
+            
+            # Upload to Supabase Storage
+            storage_path, saved_size = await self.storage.upload_file(
+                user_id=user_id,
+                category="csv",
+                upload_file=file,
+                subfolder=None,
+                unique_filename=unique_filename
+            )
+            
+            # Create metadata record
+            await self._create_file_metadata(
+                user_id=user_id,
+                filename=unique_filename,
+                filepath=storage_path,
+                file_type="csv",
+                size_bytes=saved_size,
+                mime_type=file.content_type,
+                subfolder=None
+            )
+            
+            saved_filepath = storage_path
             filename = unique_filename
 
         return TextCombinationsResponse(
@@ -175,63 +268,219 @@ class FileService:
             filename=filename,
         )
 
-    def list_videos(self, subfolder: str | None = None) -> FileListResponse:
-        """List all video files"""
-        folder_path = self.storage.get_storage_path("videos", subfolder)
-        files = self.storage.list_files(
-            folder_path, self.settings.video_extensions, "video"
-        )
-        return FileListResponse(files=files, count=len(files))
+    async def list_videos(
+        self,
+        user_id: str,
+        subfolder: Optional[str] = None
+    ) -> FileListResponse:
+        """List all video files for a user from database"""
+        try:
+            query = self.supabase.table("files") \
+                .select("*") \
+                .eq("user_id", user_id) \
+                .eq("file_type", "video")
+            
+            if subfolder:
+                query = query.eq("subfolder", subfolder)
+            
+            result = query.order("created_at", desc=True).execute()
+            
+            files = []
+            for file_data in result.data:
+                files.append(FileInfo(
+                    filename=file_data["filename"],
+                    filepath=file_data["filepath"],
+                    size=file_data["size_bytes"],
+                    modified=file_data["created_at"],
+                    file_type="video"
+                ))
+            
+            return FileListResponse(files=files, count=len(files))
+        except Exception as e:
+            raise StorageError(f"Failed to list videos: {str(e)}")
 
-    def list_audios(self, subfolder: str | None = None) -> FileListResponse:
-        """List all audio files"""
-        folder_path = self.storage.get_storage_path("audios", subfolder)
-        files = self.storage.list_files(
-            folder_path, self.settings.audio_extensions, "audio"
-        )
-        return FileListResponse(files=files, count=len(files))
+    async def list_audios(
+        self,
+        user_id: str,
+        subfolder: Optional[str] = None
+    ) -> FileListResponse:
+        """List all audio files for a user from database"""
+        try:
+            query = self.supabase.table("files") \
+                .select("*") \
+                .eq("user_id", user_id) \
+                .eq("file_type", "audio")
+            
+            if subfolder:
+                query = query.eq("subfolder", subfolder)
+            
+            result = query.order("created_at", desc=True).execute()
+            
+            files = []
+            for file_data in result.data:
+                files.append(FileInfo(
+                    filename=file_data["filename"],
+                    filepath=file_data["filepath"],
+                    size=file_data["size_bytes"],
+                    modified=file_data["created_at"],
+                    file_type="audio"
+                ))
+            
+            return FileListResponse(files=files, count=len(files))
+        except Exception as e:
+            raise StorageError(f"Failed to list audios: {str(e)}")
 
-    def list_csvs(self) -> FileListResponse:
-        """List all CSV files"""
-        folder_path = self.settings.csv_storage_path
-        files = self.storage.list_files(
-            folder_path, self.settings.csv_extensions, "csv"
-        )
-        return FileListResponse(files=files, count=len(files))
+    async def list_csvs(
+        self,
+        user_id: str
+    ) -> FileListResponse:
+        """List all CSV files for a user from database"""
+        try:
+            result = self.supabase.table("files") \
+                .select("*") \
+                .eq("user_id", user_id) \
+                .eq("file_type", "csv") \
+                .order("created_at", desc=True) \
+                .execute()
+            
+            files = []
+            for file_data in result.data:
+                files.append(FileInfo(
+                    filename=file_data["filename"],
+                    filepath=file_data["filepath"],
+                    size=file_data["size_bytes"],
+                    modified=file_data["created_at"],
+                    file_type="csv"
+                ))
+            
+            return FileListResponse(files=files, count=len(files))
+        except Exception as e:
+            raise StorageError(f"Failed to list CSVs: {str(e)}")
 
-    def delete_file(self, filepath: str) -> FileDeleteResponse:
-        """Delete a file"""
-        file_path = Path(filepath)
-        self.storage.delete_file(file_path)
+    async def delete_file(
+        self,
+        user_id: str,
+        file_id: str
+    ) -> FileDeleteResponse:
+        """Delete a file (from storage and database)"""
+        try:
+            # Get file metadata
+            result = self.supabase.table("files") \
+                .select("*") \
+                .eq("id", file_id) \
+                .eq("user_id", user_id) \
+                .execute()
+            
+            if not result.data or len(result.data) == 0:
+                raise FileNotFoundError(f"File not found or access denied")
+            
+            file_data = result.data[0]
+            
+            # Delete from storage
+            await self.storage.delete_file(
+                category=file_data["file_type"] + "s",  # video -> videos
+                storage_path=file_data["filepath"]
+            )
+            
+            # Delete metadata from database
+            self.supabase.table("files").delete().eq("id", file_id).execute()
+            
+            return FileDeleteResponse(
+                message="File deleted successfully",
+                filepath=file_data["filepath"]
+            )
+        except FileNotFoundError:
+            raise
+        except Exception as e:
+            raise StorageError(f"Failed to delete file: {str(e)}")
 
-        return FileDeleteResponse(
-            message="File deleted successfully", filepath=filepath
-        )
+    async def get_file_download_url(
+        self,
+        user_id: str,
+        file_id: str
+    ) -> str:
+        """Get signed download URL for a file"""
+        try:
+            # Get file metadata
+            result = self.supabase.table("files") \
+                .select("*") \
+                .eq("id", file_id) \
+                .eq("user_id", user_id) \
+                .execute()
+            
+            if not result.data or len(result.data) == 0:
+                raise FileNotFoundError(f"File not found or access denied")
+            
+            file_data = result.data[0]
+            
+            # Get signed URL
+            url = self.storage.get_public_url(
+                category=file_data["file_type"] + "s",
+                storage_path=file_data["filepath"]
+            )
+            
+            return url
+        except FileNotFoundError:
+            raise
+        except Exception as e:
+            raise StorageError(f"Failed to get download URL: {str(e)}")
 
-    def move_file(self, source_path: str, destination_folder: str) -> FileMoveResponse:
-        """Move a file to another folder"""
-        source = Path(source_path)
-        destination_dir = Path(destination_folder)
+    async def list_folders(
+        self,
+        user_id: str,
+        category: str
+    ) -> FolderListResponse:
+        """List all subfolders for a user in a category"""
+        try:
+            # Get unique subfolders from database
+            result = self.supabase.table("files") \
+                .select("subfolder") \
+                .eq("user_id", user_id) \
+                .eq("file_type", category.rstrip("s")) \
+                .not_.is_("subfolder", "null") \
+                .execute()
+            
+            # Get unique subfolders and count files
+            subfolder_stats = {}
+            for row in result.data:
+                subfolder = row["subfolder"]
+                if subfolder:
+                    if subfolder not in subfolder_stats:
+                        subfolder_stats[subfolder] = 0
+                    subfolder_stats[subfolder] += 1
+            
+            folders = []
+            for subfolder, count in subfolder_stats.items():
+                from schemas.file_schemas import FolderInfo
+                folders.append(FolderInfo(
+                    name=subfolder,
+                    path=f"{user_id}/{subfolder}",
+                    file_count=count,
+                    total_size=0  # We'd need to query file sizes separately
+                ))
+            
+            return FolderListResponse(folders=folders, count=len(folders))
+        except Exception as e:
+            raise StorageError(f"Failed to list folders: {str(e)}")
 
-        new_path = self.storage.move_file(source, destination_dir)
-
-        return FileMoveResponse(
-            message="File moved successfully",
-            source=source_path,
-            destination=str(new_path),
-        )
-
-    def list_folders(self, category: str) -> FolderListResponse:
-        """List all folders in a category"""
-        folders = self.storage.list_folders(category)
-        return FolderListResponse(folders=folders, count=len(folders))
-
-    def create_folder(self, category: str, folder_name: str) -> FolderCreateResponse:
-        """Create a new folder"""
-        new_folder = self.storage.create_folder(category, folder_name)
-
-        return FolderCreateResponse(
-            message="Folder created successfully",
-            folder_name=new_folder.name,
-            folder_path=str(new_folder),
-        )
+    async def create_folder(
+        self,
+        user_id: str,
+        category: str,
+        folder_name: str
+    ) -> FolderCreateResponse:
+        """Create a new folder in Supabase Storage"""
+        try:
+            folder_path = await self.storage.create_folder(
+                category=category,
+                user_id=user_id,
+                folder_name=folder_name
+            )
+            
+            return FolderCreateResponse(
+                message="Folder created successfully",
+                folder_name=folder_name,
+                folder_path=folder_path,
+            )
+        except Exception as e:
+            raise StorageError(f"Failed to create folder: {str(e)}")

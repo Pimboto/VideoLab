@@ -127,6 +127,7 @@ class UserService:
         self,
         clerk_id: str,
         email: str,
+        username: Optional[str] = None,
         first_name: Optional[str] = None,
         last_name: Optional[str] = None,
         avatar_url: Optional[str] = None,
@@ -162,6 +163,10 @@ class UserService:
                 update_data["email"] = email
                 update_needed = True
 
+            if username and username != user.get("username"):
+                update_data["username"] = username
+                update_needed = True
+
             if first_name and first_name != user.get("first_name"):
                 update_data["first_name"] = first_name
                 update_needed = True
@@ -184,6 +189,7 @@ class UserService:
         user_data = UserCreate(
             clerk_id=clerk_id,
             email=email,
+            username=username,
             first_name=first_name,
             last_name=last_name,
             avatar_url=avatar_url,

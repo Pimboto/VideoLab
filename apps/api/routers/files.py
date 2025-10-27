@@ -36,7 +36,8 @@ async def upload_video(
     - **file**: Video file to upload
     - **subfolder**: Optional subfolder for organization (sent as form data)
     """
-    return await file_service.upload_video(file, subfolder)
+    user_id = current_user["id"]
+    return await file_service.upload_video(user_id, file, subfolder)
 
 
 @router.post("/upload/audio", response_model=FileUploadResponse, status_code=201)
@@ -54,7 +55,8 @@ async def upload_audio(
     - **file**: Audio file to upload
     - **subfolder**: Optional subfolder for organization (sent as form data)
     """
-    return await file_service.upload_audio(file, subfolder)
+    user_id = current_user["id"]
+    return await file_service.upload_audio(user_id, file, subfolder)
 
 
 @router.post("/upload/csv", response_model=TextCombinationsResponse, status_code=201)
@@ -72,11 +74,12 @@ async def upload_csv(
     - **file**: CSV file to upload and parse
     - **save_file**: Whether to save the file to storage
     """
-    return await file_service.upload_csv(file, save_file)
+    user_id = current_user["id"]
+    return await file_service.upload_csv(user_id, file, save_file)
 
 
 @router.get("/videos", response_model=FileListResponse)
-def list_videos(
+async def list_videos(
     subfolder: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user),
     file_service: FileService = Depends(get_file_service),
@@ -88,11 +91,12 @@ def list_videos(
 
     - **subfolder**: Optional subfolder filter
     """
-    return file_service.list_videos(subfolder)
+    user_id = current_user["id"]
+    return await file_service.list_videos(user_id, subfolder)
 
 
 @router.get("/audios", response_model=FileListResponse)
-def list_audios(
+async def list_audios(
     subfolder: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user),
     file_service: FileService = Depends(get_file_service),
@@ -104,11 +108,12 @@ def list_audios(
 
     - **subfolder**: Optional subfolder filter
     """
-    return file_service.list_audios(subfolder)
+    user_id = current_user["id"]
+    return await file_service.list_audios(user_id, subfolder)
 
 
 @router.get("/csv", response_model=FileListResponse)
-def list_csvs(
+async def list_csvs(
     current_user: dict = Depends(get_current_user),
     file_service: FileService = Depends(get_file_service),
 ) -> FileListResponse:
@@ -117,7 +122,8 @@ def list_csvs(
     
     Requires authentication.
     """
-    return file_service.list_csvs()
+    user_id = current_user["id"]
+    return await file_service.list_csvs(user_id)
 
 
 @router.get("/outputs", response_model=FileListResponse)

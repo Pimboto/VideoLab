@@ -6,7 +6,7 @@ This module handles Clerk JWT token verification and user authentication.
 import jwt
 import requests
 from functools import lru_cache
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from core.config import get_settings
 from core.exceptions import UnauthorizedError
 
@@ -119,20 +119,22 @@ def verify_clerk_token(token: str) -> Dict[str, Any]:
 def extract_user_info(token_payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Extract user information from a verified Clerk JWT payload.
+    
+    Note: This only extracts the clerk_id. The user must already exist
+    in Supabase (created via webhook).
 
     Args:
         token_payload: The verified JWT payload
 
     Returns:
-        Dict containing user information:
+        Dict containing minimal user information:
         - clerk_id: Clerk user ID
-        - email: User email
-        - first_name: User first name (if available)
-        - last_name: User last name (if available)
     """
+    clerk_id = token_payload.get("sub")
+    
+    if not clerk_id:
+        raise UnauthorizedError("Missing user ID in token")
+    
     return {
-        "clerk_id": token_payload.get("sub"),
-        "email": token_payload.get("email", ""),
-        "first_name": token_payload.get("first_name"),
-        "last_name": token_payload.get("last_name"),
+        "clerk_id": clerk_id,
     }

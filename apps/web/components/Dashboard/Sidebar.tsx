@@ -3,7 +3,10 @@
 import { Avatar } from "@heroui/avatar";
 import { Divider } from "@heroui/divider";
 import { Link } from "@heroui/link";
+import { Button } from "@heroui/button";
+import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
 import { usePathname } from "next/navigation";
+import { useUser, useClerk } from "@clerk/nextjs";
 import Image from "next/image";
 import {
   VideoPlay,
@@ -15,7 +18,8 @@ import {
   MessageQuestion,
   VideoVertical,
   Star1,
-  Home2
+  Home2,
+  LogoutCurve
 } from "iconsax-reactjs";
 
 const libraryItems = [
@@ -37,6 +41,8 @@ const bottomItems = [
 
 export const Sidebar = () => {
   const pathname = usePathname();
+  const { user, isLoaded } = useUser();
+  const { signOut } = useClerk();
 
   const renderNavItem = (item: any) => {
     const Icon = item.icon;
@@ -163,19 +169,64 @@ export const Sidebar = () => {
 
       {/* User Profile */}
       <div className="p-4">
-        <div className="flex items-center gap-3">
-          <Avatar
-            isBordered
-            color="primary"
-            name="JhonDoe"
-            size="sm"
-            src="https://i.pravatar.cc/150?u=JhonDoe"
-          />
-          <div className="flex-1">
-            <p className="text-sm font-medium">Jhon</p>
-            <p className="text-xs text-default-500">JhonDoe@email.com</p>
+        {isLoaded && user ? (
+          <Dropdown placement="top">
+            <DropdownTrigger>
+              <div className="flex items-center gap-3 cursor-pointer hover:bg-default-50 p-2 rounded-lg transition-colors">
+                <Avatar
+                  isBordered
+                  color="primary"
+                  name={user.fullName || user.username || "User"}
+                  size="sm"
+                  src={user.imageUrl}
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-medium truncate">
+                    {user.firstName || user.username || "User"}
+                  </p>
+                  <p className="text-xs text-default-500 truncate">
+                    {user.primaryEmailAddress?.emailAddress || "No email"}
+                  </p>
+                </div>
+              </div>
+            </DropdownTrigger>
+            <DropdownMenu aria-label="User actions">
+              <DropdownItem 
+                key="profile" 
+                className="h-14 gap-2"
+                textValue="Profile"
+              >
+                <p className="font-semibold">Signed in as</p>
+                <p className="font-semibold">{user.primaryEmailAddress?.emailAddress}</p>
+              </DropdownItem>
+              <DropdownItem 
+                key="settings"
+                textValue="Settings"
+                startContent={<Setting2 size={18} />}
+                href="/dashboard/settings"
+              >
+                Settings
+              </DropdownItem>
+              <DropdownItem 
+                key="logout" 
+                color="danger"
+                textValue="Log out"
+                startContent={<LogoutCurve size={18} />}
+                onPress={() => signOut()}
+              >
+                Log out
+              </DropdownItem>
+            </DropdownMenu>
+          </Dropdown>
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-default-200 animate-pulse" />
+            <div className="flex-1">
+              <div className="h-4 bg-default-200 rounded animate-pulse mb-1" />
+              <div className="h-3 bg-default-200 rounded animate-pulse w-3/4" />
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </aside>
   );

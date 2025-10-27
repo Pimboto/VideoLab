@@ -5,17 +5,25 @@ These models represent the user data structure in the database.
 """
 from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class UserBase(BaseModel):
     """Base user model with common fields"""
 
-    email: EmailStr
+    email: str  # Email is required (always provided by Clerk webhook)
     username: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     avatar_url: Optional[str] = None
+    
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        """Validate email format"""
+        if not v or '@' not in v:
+            raise ValueError('Valid email is required')
+        return v.strip()
 
 
 class UserCreate(UserBase):

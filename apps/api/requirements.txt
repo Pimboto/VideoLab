@@ -23,6 +23,7 @@ requests==2.32.3
 # Authentication (Clerk JWT verification)
 pyjwt==2.8.0
 cryptography==42.0.5
+svix==1.80.0
 
 # Database (Supabase)
 supabase==2.10.0

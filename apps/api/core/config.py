@@ -42,6 +42,10 @@ class Settings(BaseSettings):
         default="https://api.clerk.com/v1/jwks",
         alias="CLERK_JWKS_URL"
     )
+    clerk_webhook_secret: str = Field(
+        default="",  # Optional: only required if using webhooks
+        alias="CLERK_WEBHOOK_SECRET"
+    )
 
     # Supabase Configuration
     supabase_url: str = Field(..., alias="SUPABASE_URL")

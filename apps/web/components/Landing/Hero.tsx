@@ -8,6 +8,7 @@ import {
   ArrowRightIcon,
   CheckCircleIcon,
 } from "@heroicons/react/24/outline";
+import { SignedIn, SignedOut } from "@clerk/nextjs";
 
 import { siteConfig } from "@/config/site";
 import { title, subtitle } from "@/components/primitives";
@@ -57,26 +58,51 @@ export default function Hero() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 mt-8 justify-center">
-            <Button
-              as={Link}
-              href="/dashboard"
-              color="primary"
-              size="lg"
-              className="font-semibold"
-              endContent={<ArrowRightIcon className="w-4 h-4" />}
-            >
-              Go to Dashboard
-            </Button>
-            <Button
-              as={Link}
-              href={siteConfig.links.github}
-              variant="bordered"
-              size="lg"
-              className="font-semibold"
-              startContent={<PlayIcon className="w-4 h-4" />}
-            >
-              View Documentation
-            </Button>
+            {/* Mostrar botones según estado de autenticación */}
+            <SignedOut>
+              <Button
+                as={Link}
+                href="/sign-up"
+                color="primary"
+                size="lg"
+                className="font-semibold"
+                endContent={<ArrowRightIcon className="w-4 h-4" />}
+              >
+                Get Started Free
+              </Button>
+              <Button
+                as={Link}
+                href="/sign-in"
+                variant="bordered"
+                size="lg"
+                className="font-semibold"
+              >
+                Sign In
+              </Button>
+            </SignedOut>
+            
+            <SignedIn>
+              <Button
+                as={Link}
+                href="/dashboard"
+                color="primary"
+                size="lg"
+                className="font-semibold"
+                endContent={<ArrowRightIcon className="w-4 h-4" />}
+              >
+                Go to Dashboard
+              </Button>
+              <Button
+                as={Link}
+                href={siteConfig.links.github}
+                variant="bordered"
+                size="lg"
+                className="font-semibold"
+                startContent={<PlayIcon className="w-4 h-4" />}
+              >
+                View Documentation
+              </Button>
+            </SignedIn>
           </div>
         </div>
       </div>

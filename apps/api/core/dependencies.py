@@ -17,10 +17,6 @@ from services.user_service import UserService
 from utils.supabase_client import get_supabase_client
 
 
-# Singleton instances
-_job_service_instance: JobService | None = None
-
-
 @lru_cache
 def get_storage_service() -> StorageService:
     """Get storage service instance"""
@@ -28,12 +24,10 @@ def get_storage_service() -> StorageService:
     return StorageService(settings)
 
 
+@lru_cache
 def get_job_service() -> JobService:
-    """Get job service singleton instance"""
-    global _job_service_instance
-    if _job_service_instance is None:
-        _job_service_instance = JobService()
-    return _job_service_instance
+    """Get job service instance with Supabase"""
+    return JobService()
 
 
 @lru_cache
@@ -145,21 +139,19 @@ async def get_current_user(
     if not clerk_id:
         raise UnauthorizedError("Invalid user ID in token")
 
-    # Get or create user in Supabase
+    # Get user from Supabase (must exist via webhook)
     user_service = UserService(supabase)
 
     try:
-        user = user_service.get_or_create_user(
-            clerk_id=clerk_id,
-            email=user_info.get("email", ""),
-            first_name=user_info.get("first_name"),
-            last_name=user_info.get("last_name"),
-        )
+        user = user_service.get_user_by_clerk_id(clerk_id)
     except Exception as e:
         raise UnauthorizedError(f"Failed to retrieve user from database: {str(e)}")
 
     if not user:
-        raise UnauthorizedError("User not found in database")
+        raise UnauthorizedError(
+            "User not found in database. Please contact support.",
+            {"clerk_id": clerk_id, "hint": "User should be created via Clerk webhook"}
+        )
 
     return user
 

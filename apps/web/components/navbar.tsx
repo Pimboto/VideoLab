@@ -7,6 +7,7 @@ import {
 import { Button } from "@heroui/button";
 import { Link } from "@heroui/link";
 import NextLink from "next/link";
+import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 
 import { siteConfig } from "@/config/site";
 import { ThemeSwitch } from "@/components/theme-switch";
@@ -62,17 +63,50 @@ export const Navbar = () => {
           </Link>
           <ThemeSwitch />
         </NavbarItem>
-        <NavbarItem className="hidden md:flex">
-          <Button
-            as={Link}
-            className="text-sm font-medium"
-            color="primary"
-            href="/dashboard"
-            variant="solid"
-          >
-            Dashboard
-          </Button>
-        </NavbarItem>
+        
+        {/* Mostrar botones según estado de autenticación */}
+        <SignedOut>
+          <NavbarItem className="hidden md:flex gap-2">
+            <Button
+              as={Link}
+              className="text-sm font-medium"
+              href="/sign-in"
+              variant="flat"
+            >
+              Sign In
+            </Button>
+            <Button
+              as={Link}
+              className="text-sm font-medium"
+              color="primary"
+              href="/sign-up"
+              variant="solid"
+            >
+              Sign Up
+            </Button>
+          </NavbarItem>
+        </SignedOut>
+        
+        <SignedIn>
+          <NavbarItem className="hidden md:flex gap-3">
+            <Button
+              as={Link}
+              className="text-sm font-medium"
+              color="primary"
+              href="/dashboard"
+              variant="solid"
+            >
+              Dashboard
+            </Button>
+            <UserButton 
+              appearance={{
+                elements: {
+                  avatarBox: "w-9 h-9"
+                }
+              }}
+            />
+          </NavbarItem>
+        </SignedIn>
       </NavbarContent>
 
       <NavbarContent className="sm:hidden basis-1 pl-4" justify="end">

@@ -90,7 +90,8 @@ async def process_single_video(
     - **output_path**: Path for output video
     - **config**: Processing configuration (optional)
     """
-    job_id = job_service.create_job("pending", "Job queued")
+    user_id = current_user["id"]
+    job_id = job_service.create_job(user_id, job_type="single", initial_status="pending", message="Job queued")
 
     background_tasks.add_task(
         processing_service.process_single_video,
@@ -151,7 +152,8 @@ async def process_batch_videos(
     else:
         total = vids_response.count * rows_count * max(1, auds_count)
 
-    job_id = job_service.create_job("pending", "Batch job queued")
+    user_id = current_user["id"]
+    job_id = job_service.create_job(user_id, job_type="batch", initial_status="pending", message="Batch job queued")
 
     background_tasks.add_task(
         processing_service.process_batch_videos,
@@ -185,7 +187,8 @@ def get_job_status(
 
     - **job_id**: Unique job identifier
     """
-    return job_service.get_job(job_id)
+    user_id = current_user["id"]
+    return job_service.get_job(job_id, user_id)
 
 
 @router.get("/jobs", response_model=List[JobStatus])
@@ -198,7 +201,8 @@ def list_all_jobs(
     
     Requires authentication.
     """
-    return job_service.list_jobs()
+    user_id = current_user["id"]
+    return job_service.list_jobs(user_id)
 
 
 @router.delete("/jobs/{job_id}", response_model=JobDeleteResponse)
@@ -216,4 +220,5 @@ def delete_job(
 
     - **job_id**: Unique job identifier
     """
-    return job_service.delete_job(job_id)
+    user_id = current_user["id"]
+    return job_service.delete_job(job_id, user_id)

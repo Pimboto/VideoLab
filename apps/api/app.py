@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.config import get_settings
 from core.dependencies import get_job_service
 from middleware.error_handler import ErrorHandlerMiddleware, exception_handlers
-from routers import files, folders, processing, auth
+from routers import files, folders, processing, auth, webhooks
 
 # Configure logging
 logging.basicConfig(
@@ -77,6 +77,9 @@ def create_app() -> FastAPI:
     app.include_router(files.router, prefix=settings.api_prefix)
     app.include_router(folders.router, prefix=settings.api_prefix)
     app.include_router(processing.router, prefix=settings.api_prefix)
+    
+    # Webhooks router (NO AUTH - Clerk sends webhooks here)
+    app.include_router(webhooks.router, prefix=settings.api_prefix)
 
     # Health check endpoint
     @app.get("/health")
