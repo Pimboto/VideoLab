@@ -1,9 +1,10 @@
 /**
- * Custom hook for toast notifications
- * Simple console-based notifications for now (can be enhanced later)
+ * useToast - Toast notification hook using @heroui/toast
  */
 
-export type ToastType = "success" | "error" | "warning" | "info";
+import { addToast } from "@heroui/toast";
+
+export type ToastType = "default" | "primary" | "secondary" | "success" | "warning" | "danger";
 
 export interface ToastOptions {
   title?: string;
@@ -16,25 +17,16 @@ export function useToast() {
   const showToast = ({
     title,
     description,
-    type = "info",
+    type = "default",
     duration = 5000,
   }: ToastOptions) => {
-    // Simple console output for now
-    const prefix = type === "error" ? "❌" : type === "success" ? "✅" : type === "warning" ? "⚠️" : "ℹ️";
-    const message = title ? `${prefix} ${title}: ${description}` : `${prefix} ${description}`;
-
-    if (type === "error") {
-      console.error(message);
-    } else if (type === "warning") {
-      console.warn(message);
-    } else {
-      console.log(message);
-    }
-
-    // Alert for errors to ensure visibility
-    if (type === "error") {
-      alert(description);
-    }
+    addToast({
+      title: title || undefined,
+      description,
+      color: type,
+      timeout: duration,
+      shouldShowTimeoutProgress: true,
+    });
   };
 
   const success = (description: string, title?: string) => {
@@ -42,7 +34,7 @@ export function useToast() {
   };
 
   const error = (description: string, title?: string) => {
-    showToast({ description, title, type: "error" });
+    showToast({ description, title, type: "danger" });
   };
 
   const warning = (description: string, title?: string) => {
@@ -50,7 +42,7 @@ export function useToast() {
   };
 
   const info = (description: string, title?: string) => {
-    showToast({ description, title, type: "info" });
+    showToast({ description, title, type: "primary" });
   };
 
   return {

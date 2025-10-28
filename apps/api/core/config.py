@@ -53,7 +53,9 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = Field(..., alias="SUPABASE_SERVICE_ROLE_KEY")
 
     # Storage Configuration
-    storage_base_dir: Path = Field(default=Path("D:/Work/video"), alias="STORAGE_DIR")
+    # IMPORTANT: Set STORAGE_DIR environment variable to configure storage location
+    # Example: STORAGE_DIR=/app/storage or STORAGE_DIR=D:/Work/video
+    storage_base_dir: Path = Field(..., alias="STORAGE_DIR")
 
     # File Size Limits (in bytes)
     max_video_size: int = Field(default=500 * 1024 * 1024, alias="MAX_VIDEO_SIZE")  # 500 MB

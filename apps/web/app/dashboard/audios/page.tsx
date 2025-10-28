@@ -23,9 +23,9 @@ const AUDIO_COLUMNS = [
 
 export default function AudiosPage() {
   const { getToken } = useAuth();
-  const { listFiles, deleteFile, getAudioStreamUrl } = useFiles();
-  const { listFolders, createFolder } = useFolders();
-  const { uploadFile, uploadProgress, isUploading } = useUpload();
+  const { listFiles, deleteFile, bulkDeleteFiles, bulkMoveFiles, renameFile, getAudioStreamUrl } = useFiles();
+  const { listFolders, createFolder, deleteFolder } = useFolders();
+  const { uploadFile, uploadMultipleFiles, uploadProgress, isUploading } = useUpload();
   const toast = useToast();
 
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -40,7 +40,7 @@ export default function AudiosPage() {
   const { isOpen: isMoveOpen, onOpen: onMoveOpen, onClose: onMoveClose } = useDisclosure();
 
   const [uploadFolder, setUploadFolder] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewAudio, setPreviewAudio] = useState<AudioFile | null>(null);
   const [renameAudio, setRenameAudio] = useState<AudioFile | null>(null);
   const [newName, setNewName] = useState("");
@@ -65,7 +65,7 @@ export default function AudiosPage() {
 
   const loadAllAudios = async () => {
     setLoading(true);
-    const response = await listFiles("audios");
+    const response = await listFiles("audios", selectedFolder);
     setLoading(false);
 
     if (response) {
@@ -91,24 +91,38 @@ export default function AudiosPage() {
   };
 
   const handleDeleteFolder = async (folderName: string) => {
-    toast.info("Folder delete not yet implemented");
-  };
-
-  const handleUpload = async () => {
-    if (!selectedFile || !uploadFolder) return;
-
-    const result = await uploadFile(selectedFile, "audio", uploadFolder);
-
-    if (result.success) {
-      toast.success("Audio uploaded successfully");
-      setSelectedFile(null);
-      setUploadFolder("");
-      onUploadClose();
+    const result = await deleteFolder("audios", folderName);
+    if (result) {
+      toast.success(`Folder "${folderName}" deleted successfully. ${result.files_deleted} file(s) removed.`);
       loadFolders();
       loadAllAudios();
     } else {
-      toast.error(result.error || "Failed to upload audio");
+      toast.error("Failed to delete folder");
     }
+  };
+
+  const handleUpload = async () => {
+    if (selectedFiles.length === 0 || !uploadFolder) return;
+
+    // Upload multiple files sequentially with progress
+    const results = await uploadMultipleFiles(selectedFiles, "audio", uploadFolder);
+
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
+
+    if (successCount === selectedFiles.length) {
+      toast.success(`Successfully uploaded ${successCount} audio file${successCount > 1 ? 's' : ''}`);
+    } else if (successCount > 0) {
+      toast.warning(`Uploaded ${successCount} audio file(s), ${failCount} failed`);
+    } else {
+      toast.error("Failed to upload audio files");
+    }
+
+    setSelectedFiles([]);
+    setUploadFolder("");
+    onUploadClose();
+    loadFolders();
+    loadAllAudios();
   };
 
   const handleDelete = async (audio: AudioFile) => {
@@ -130,18 +144,15 @@ export default function AudiosPage() {
     if (selection.length === 0) return;
     if (!confirm(`Delete ${selection.length} selected audios?`)) return;
 
-    let successCount = 0;
-    for (const filepath of selection) {
-      const success = await deleteFile(filepath as string);
-      if (success) successCount++;
-    }
+    // Use bulk delete endpoint (best practice - single request instead of loop)
+    const result = await bulkDeleteFiles(selection as string[]);
 
     setSelectedAudios(new Set<string>());
 
-    if (successCount === selection.length) {
-      toast.success(`Deleted ${successCount} audio files successfully`);
-    } else if (successCount > 0) {
-      toast.warning(`Deleted ${successCount} of ${selection.length} audio files`);
+    if (result.deleted === selection.length) {
+      toast.success(`Deleted ${result.deleted} audio files successfully`);
+    } else if (result.deleted > 0) {
+      toast.warning(`Deleted ${result.deleted} of ${selection.length} audio files. ${result.failed} failed.`);
     } else {
       toast.error("Failed to delete audio files");
     }
@@ -151,13 +162,41 @@ export default function AudiosPage() {
   };
 
   const handleBulkMove = async () => {
-    toast.info("Bulk move not yet implemented");
+    const selection = selectedAudios === "all" ? audios.map(a => a.filepath) : Array.from(selectedAudios);
+    if (selection.length === 0 || !moveToFolder) return;
+
+    const result = await bulkMoveFiles(selection as string[], moveToFolder);
+
+    setSelectedAudios(new Set<string>());
+    setMoveToFolder("");
     onMoveClose();
+
+    if (result.moved === selection.length) {
+      toast.success(`Moved ${result.moved} audio files successfully to "${moveToFolder}"`);
+    } else if (result.moved > 0) {
+      toast.warning(`Moved ${result.moved} of ${selection.length} audio files. ${result.failed} failed.`);
+    } else {
+      toast.error("Failed to move audio files");
+    }
+
+    loadFolders();
+    loadAllAudios();
   };
 
   const handleRename = async () => {
-    toast.info("Rename not yet implemented");
-    onRenameClose();
+    if (!renameAudio || !newName.trim()) return;
+
+    const success = await renameFile(renameAudio.filepath, newName);
+
+    if (success) {
+      toast.success("Audio renamed successfully");
+      setRenameAudio(null);
+      setNewName("");
+      onRenameClose();
+      loadAllAudios();
+    } else {
+      toast.error("Failed to rename audio");
+    }
   };
 
   const openPreview = (audio: AudioFile) => {
@@ -276,11 +315,26 @@ export default function AudiosPage() {
             <Input
               type="file"
               accept=".mp3,.wav,.m4a,.aac,.flac"
-              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+              onChange={(e) => {
+                const files = e.target.files;
+                if (files) {
+                  setSelectedFiles(Array.from(files));
+                }
+              }}
+              // @ts-ignore - multiple attribute is valid
+              multiple
             />
+            {selectedFiles.length > 0 && (
+              <div className="text-sm text-default-500">
+                {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected
+              </div>
+            )}
             {isUploading && (
               <div className="mt-2">
-                <p className="text-sm text-default-500 mb-1">Uploading: {uploadProgress}%</p>
+                <p className="text-sm text-default-500 mb-1">
+                  Uploading: {uploadProgress}%
+                  {uploadProgress >= 80 && uploadProgress < 100 && " (Processing on server...)"}
+                </p>
                 <div className="w-full bg-default-200 rounded-full h-2">
                   <div
                     className="bg-primary h-2 rounded-full transition-all"
@@ -298,9 +352,9 @@ export default function AudiosPage() {
               color="primary"
               onPress={handleUpload}
               isLoading={isUploading}
-              isDisabled={!uploadFolder || !selectedFile}
+              isDisabled={!uploadFolder || selectedFiles.length === 0}
             >
-              Upload
+              Upload {selectedFiles.length > 1 ? `${selectedFiles.length} Files` : ''}
             </Button>
           </ModalFooter>
         </ModalContent>

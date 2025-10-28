@@ -65,7 +65,7 @@ export function useUpload() {
         const formData = new FormData();
         formData.append("file", file);
         if (folderName) {
-          formData.append("folder_name", folderName);
+          formData.append("subfolder", folderName);  // Backend expects 'subfolder'
         }
 
         // Upload with progress tracking

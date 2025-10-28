@@ -14,6 +14,7 @@ from services.job_service import JobService
 from services.processing_service import ProcessingService
 from services.storage_service import StorageService
 from services.user_service import UserService
+from services.video_render_service import VideoRenderService
 from utils.supabase_client import get_supabase_client
 
 
@@ -39,11 +40,19 @@ def get_file_service() -> FileService:
 
 
 @lru_cache
+def get_video_render_service() -> VideoRenderService:
+    """Get video render service instance"""
+    settings = get_settings()
+    return VideoRenderService(settings)
+
+
+@lru_cache
 def get_processing_service() -> ProcessingService:
     """Get processing service instance"""
     settings = get_settings()
     job_service = get_job_service()
-    return ProcessingService(settings, job_service)
+    video_render_service = get_video_render_service()
+    return ProcessingService(settings, job_service, video_render_service)
 
 
 # ========================================

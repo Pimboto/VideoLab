@@ -1,24 +1,34 @@
 """
 File management routes
 """
+import logging
+
 from fastapi import APIRouter, Depends, File, Query, UploadFile, HTTPException, Form
 from fastapi.responses import StreamingResponse, FileResponse
 from pathlib import Path
 import os
 
 from core.dependencies import get_file_service, get_current_user
+from core.exceptions import StorageError
 from schemas.file_schemas import (
     FileDeleteRequest,
     FileDeleteResponse,
+    FileBulkDeleteRequest,
+    FileBulkDeleteResponse,
     FileListResponse,
+    FileRenameRequest,
+    FileRenameResponse,
     FileMoveRequest,
     FileMoveResponse,
+    FileBulkMoveRequest,
+    FileBulkMoveResponse,
     FileUploadResponse,
 )
 from schemas.processing_schemas import TextCombinationsResponse
 from services.file_service import FileService
 
 router = APIRouter(prefix="/files", tags=["files"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/upload/video", response_model=FileUploadResponse, status_code=201)
@@ -133,39 +143,11 @@ def list_outputs(
 ) -> FileListResponse:
     """
     List all processed/output video files.
-    
+
     Requires authentication.
     """
-    import os
-    from datetime import datetime
-
-    output_dir = Path("D:/Work/video/output")
-    files_list = []
-
-    if output_dir.exists():
-        for root, dirs, files in os.walk(output_dir):
-            for file in files:
-                if file.endswith(('.mp4', '.mov', '.avi', '.mkv')):
-                    filepath = Path(root) / file
-                    stat = filepath.stat()
-
-                    # Get the folder name relative to output dir
-                    relative_path = filepath.relative_to(output_dir)
-                    folder_name = str(relative_path.parent) if relative_path.parent != Path('.') else ""
-
-                    files_list.append({
-                        "filename": file,
-                        "filepath": str(filepath),
-                        "size": stat.st_size,
-                        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                        "file_type": "video",
-                        "folder": folder_name
-                    })
-
-    # Sort by modified date, newest first
-    files_list.sort(key=lambda x: x["modified"], reverse=True)
-
-    return FileListResponse(files=files_list, count=len(files_list))
+    user_id = current_user["id"]
+    return file_service.list_output_files(user_id)
 
 
 @router.delete("/delete", response_model=FileDeleteResponse)
@@ -185,6 +167,48 @@ async def delete_file(
     return await file_service.delete_file_by_path(user_id, request.filepath)
 
 
+@router.post("/bulk-delete", response_model=FileBulkDeleteResponse)
+async def bulk_delete_files(
+    request: FileBulkDeleteRequest,
+    current_user: dict = Depends(get_current_user),
+    file_service: FileService = Depends(get_file_service),
+) -> FileBulkDeleteResponse:
+    """
+    Delete multiple files in a single request.
+
+    Best practice for deleting many files:
+    - Reduces number of HTTP requests
+    - Updates folder metadata once per folder (not per file)
+    - Returns detailed success/failure information
+
+    Requires authentication.
+
+    - **filepaths**: List of file paths to delete
+    """
+    user_id = current_user["id"]
+    return await file_service.bulk_delete_files(user_id, request.filepaths)
+
+
+@router.patch("/rename", response_model=FileRenameResponse)
+async def rename_file(
+    request: FileRenameRequest,
+    current_user: dict = Depends(get_current_user),
+    file_service: FileService = Depends(get_file_service),
+) -> FileRenameResponse:
+    """
+    Rename file (display name only - doesn't move physical file).
+
+    Updates the original_filename in metadata for display purposes.
+
+    Requires authentication.
+
+    - **filepath**: File path
+    - **new_name**: New display name (without extension)
+    """
+    user_id = current_user["id"]
+    return await file_service.rename_file(user_id, request.filepath, request.new_name)
+
+
 @router.post("/move", response_model=FileMoveResponse)
 def move_file(
     request: FileMoveRequest,
@@ -202,79 +226,115 @@ def move_file(
     return file_service.move_file(request.source_path, request.destination_folder)
 
 
-@router.get("/stream/video")
-async def stream_video(
-    filepath: str = Query(...),
+@router.post("/bulk-move", response_model=FileBulkMoveResponse)
+async def bulk_move_files(
+    request: FileBulkMoveRequest,
     current_user: dict = Depends(get_current_user),
-):
+    file_service: FileService = Depends(get_file_service),
+) -> FileBulkMoveResponse:
     """
-    Stream a video file with range support for seeking.
+    Move multiple files to a destination folder in a single operation.
+
+    Best practice for moving many files:
+    - Reduces number of HTTP requests
+    - Updates folder metadata once per folder (not per file)
+    - Returns detailed success/failure information
 
     Requires authentication.
 
-    - **filepath**: Absolute path to the video file
+    - **filepaths**: List of file paths to move
+    - **destination_folder**: Destination folder name
     """
-    file_path = Path(filepath)
+    user_id = current_user["id"]
+    return await file_service.bulk_move_files(user_id, request.filepaths, request.destination_folder)
 
-    if not file_path.exists():
+
+@router.get("/stream-url/video")
+async def get_video_stream_url(
+    filepath: str = Query(...),
+    current_user: dict = Depends(get_current_user),
+    file_service: FileService = Depends(get_file_service),
+):
+    """
+    Get signed URL for streaming a video file from Supabase Storage.
+
+    Requires authentication. Returns JSON with signed URL.
+
+    - **filepath**: Storage path to the video file
+    """
+    user_id = current_user["id"]
+
+    # Verify file belongs to user
+    result = file_service.supabase.table("files") \
+        .select("*") \
+        .eq("filepath", filepath) \
+        .eq("user_id", user_id) \
+        .eq("file_type", "video") \
+        .single() \
+        .execute()
+
+    if not result.data:
         raise HTTPException(status_code=404, detail="Video file not found")
 
-    if not file_path.is_file():
-        raise HTTPException(status_code=400, detail="Path is not a file")
+    # Generate signed URL from Supabase Storage (valid for 1 hour)
+    try:
+        signed_url_response = file_service.storage.supabase.storage.from_("videos").create_signed_url(
+            path=filepath,
+            expires_in=3600  # 1 hour
+        )
 
-    # Determine media type from extension
-    ext = file_path.suffix.lower()
-    media_types = {
-        '.mp4': 'video/mp4',
-        '.mov': 'video/quicktime',
-        '.avi': 'video/x-msvideo',
-        '.mkv': 'video/x-matroska',
-        '.m4v': 'video/x-m4v',
-    }
-    media_type = media_types.get(ext, 'video/mp4')
+        if not signed_url_response or "signedURL" not in signed_url_response:
+            raise StorageError("Failed to generate signed URL for video")
 
-    return FileResponse(
-        str(file_path),
-        media_type=media_type,
-        filename=file_path.name
-    )
+        return {"url": signed_url_response["signedURL"]}
+
+    except Exception as e:
+        logger.error(f"Error getting video stream URL: {str(e)}", exc_info=True, extra={"filepath": filepath, "user_id": user_id})
+        raise StorageError("Failed to get video stream URL")
 
 
-@router.get("/stream/audio")
-async def stream_audio(
+@router.get("/stream-url/audio")
+async def get_audio_stream_url(
     filepath: str = Query(...),
     current_user: dict = Depends(get_current_user),
+    file_service: FileService = Depends(get_file_service),
 ):
     """
-    Stream an audio file.
+    Get signed URL for streaming an audio file from Supabase Storage.
 
-    Requires authentication.
+    Requires authentication. Returns JSON with signed URL.
 
-    - **filepath**: Absolute path to the audio file
+    - **filepath**: Storage path to the audio file
     """
-    file_path = Path(filepath)
+    user_id = current_user["id"]
 
-    if not file_path.exists():
+    # Verify file belongs to user
+    result = file_service.supabase.table("files") \
+        .select("*") \
+        .eq("filepath", filepath) \
+        .eq("user_id", user_id) \
+        .eq("file_type", "audio") \
+        .single() \
+        .execute()
+
+    if not result.data:
         raise HTTPException(status_code=404, detail="Audio file not found")
 
-    if not file_path.is_file():
-        raise HTTPException(status_code=400, detail="Path is not a file")
+    # Generate signed URL from Supabase Storage (valid for 1 hour)
+    try:
+        signed_url_response = file_service.storage.supabase.storage.from_("audios").create_signed_url(
+            path=filepath,
+            expires_in=3600  # 1 hour
+        )
 
-    # Determine media type from extension
-    ext = file_path.suffix.lower()
-    media_types = {
-        '.mp3': 'audio/mpeg',
-        '.wav': 'audio/wav',
-        '.m4a': 'audio/mp4',
-        '.aac': 'audio/aac',
-    }
-    media_type = media_types.get(ext, 'audio/mpeg')
+        if not signed_url_response or "signedURL" not in signed_url_response:
+            raise StorageError("Failed to generate signed URL for audio")
 
-    return FileResponse(
-        str(file_path),
-        media_type=media_type,
-        filename=file_path.name
-    )
+        return {"url": signed_url_response["signedURL"]}
+
+    except Exception as e:
+        logger.error(f"Error getting audio stream URL: {str(e)}", exc_info=True, extra={"filepath": filepath, "user_id": user_id})
+        raise StorageError("Failed to get audio stream URL")
 
 
 @router.get("/preview/csv", response_model=TextCombinationsResponse)
@@ -346,4 +406,5 @@ async def preview_csv(
             filepath=filepath
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error reading CSV: {str(e)}")
+        logger.error(f"Error reading CSV file: {str(e)}", exc_info=True, extra={"filepath": filepath, "user_id": user_id})
+        raise StorageError("Failed to read CSV file")

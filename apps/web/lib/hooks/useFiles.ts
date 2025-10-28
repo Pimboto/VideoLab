@@ -30,7 +30,7 @@ export function useFiles() {
    * List files by category
    */
   const listFiles = useCallback(
-    async (category: FileCategory): Promise<FileListResponse | null> => {
+    async (category: FileCategory, subfolder?: string | null): Promise<FileListResponse | null> => {
       setIsLoading(true);
       setError(null);
 
@@ -56,6 +56,11 @@ export function useFiles() {
             break;
           default:
             throw new Error(`Invalid category: ${category}`);
+        }
+
+        // Add subfolder query parameter if provided
+        if (subfolder) {
+          endpoint = `${endpoint}?subfolder=${encodeURIComponent(subfolder)}`;
         }
 
         const response = await apiClient.get<FileListResponse>(endpoint, token);
@@ -116,6 +121,104 @@ export function useFiles() {
   );
 
   /**
+   * Delete multiple files in a single request (bulk delete)
+   * Best practice: Use this instead of looping deleteFile for better performance
+   */
+  const bulkDeleteFiles = useCallback(
+    async (filepaths: string[]): Promise<{ deleted: number; failed: number; success: boolean }> => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const token = await getToken();
+        if (!token) {
+          throw new Error("Not authenticated");
+        }
+
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const response = await fetch(`${apiUrl}${API_ENDPOINTS.FILES.BULK_DELETE}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({ filepaths }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({
+            detail: `HTTP ${response.status}: ${response.statusText}`,
+          }));
+          throw new Error(errorData.detail || `Bulk delete failed: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return {
+          deleted: data.deleted_count,
+          failed: data.failed_count,
+          success: data.deleted_count > 0
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to delete files";
+        setError(message);
+        return { deleted: 0, failed: filepaths.length, success: false };
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [getToken]
+  );
+
+  /**
+   * Move multiple files to a folder in a single request (bulk move)
+   * Best practice: Use this instead of looping moveFile for better performance
+   */
+  const bulkMoveFiles = useCallback(
+    async (filepaths: string[], destinationFolder: string): Promise<{ moved: number; failed: number; success: boolean }> => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const token = await getToken();
+        if (!token) {
+          throw new Error("Not authenticated");
+        }
+
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const response = await fetch(`${apiUrl}${API_ENDPOINTS.FILES.BULK_MOVE}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({ filepaths, destination_folder: destinationFolder }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({
+            detail: `HTTP ${response.status}: ${response.statusText}`,
+          }));
+          throw new Error(errorData.detail || `Bulk move failed: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return {
+          moved: data.moved_count,
+          failed: data.failed_count,
+          success: data.moved_count > 0
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to move files";
+        setError(message);
+        return { moved: 0, failed: filepaths.length, success: false };
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [getToken]
+  );
+
+  /**
    * Move a file to a different location
    */
   const moveFile = useCallback(
@@ -150,18 +253,66 @@ export function useFiles() {
   );
 
   /**
-   * Get stream URL for video file
+   * Get signed stream URL for video file from Supabase
+   * Must be called before rendering video tag
    */
-  const getVideoStreamUrl = useCallback((filename: string): string => {
-    return API_ENDPOINTS.FILES.STREAM_VIDEO(filename);
-  }, []);
+  const getVideoStreamUrl = useCallback(
+    async (filepath: string): Promise<string | null> => {
+      try {
+        const token = await getToken();
+        if (!token) return null;
+
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const endpoint = `/api/video-processor/files/stream-url/video?filepath=${encodeURIComponent(filepath)}`;
+
+        const response = await fetch(`${apiUrl}${endpoint}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) return null;
+
+        const data = await response.json();
+        return data.url;
+      } catch (err) {
+        console.error("Error getting video stream URL:", err);
+        return null;
+      }
+    },
+    [getToken]
+  );
 
   /**
-   * Get stream URL for audio file
+   * Get signed stream URL for audio file from Supabase
+   * Must be called before rendering audio tag
    */
-  const getAudioStreamUrl = useCallback((filename: string): string => {
-    return API_ENDPOINTS.FILES.STREAM_AUDIO(filename);
-  }, []);
+  const getAudioStreamUrl = useCallback(
+    async (filepath: string): Promise<string | null> => {
+      try {
+        const token = await getToken();
+        if (!token) return null;
+
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const endpoint = `/api/video-processor/files/stream-url/audio?filepath=${encodeURIComponent(filepath)}`;
+
+        const response = await fetch(`${apiUrl}${endpoint}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) return null;
+
+        const data = await response.json();
+        return data.url;
+      } catch (err) {
+        console.error("Error getting audio stream URL:", err);
+        return null;
+      }
+    },
+    [getToken]
+  );
 
   /**
    * Get CSV preview URL (with full API URL)
@@ -171,11 +322,49 @@ export function useFiles() {
     return `${apiUrl}${API_ENDPOINTS.FILES.PREVIEW_CSV(filepath)}`;
   }, []);
 
+  /**
+   * Rename a file (display name only)
+   */
+  const renameFile = useCallback(
+    async (filepath: string, newName: string): Promise<boolean> => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const token = await getToken();
+        if (!token) {
+          throw new Error("Not authenticated");
+        }
+
+        await apiClient.request(
+          API_ENDPOINTS.FILES.RENAME,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ filepath, new_name: newName }),
+          },
+          token
+        );
+
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to rename file";
+        setError(message);
+        return false;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [getToken]
+  );
+
   return {
     isLoading,
     error,
     listFiles,
     deleteFile,
+    bulkDeleteFiles,
+    bulkMoveFiles,
+    renameFile,
     moveFile,
     getVideoStreamUrl,
     getAudioStreamUrl,

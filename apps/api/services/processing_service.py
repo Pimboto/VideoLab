@@ -1,11 +1,10 @@
 """
 Processing service for video processing operations
 """
+import logging
 import re
 from pathlib import Path
 from typing import List
-
-import batch_core as core
 
 from core.config import Settings
 from core.exceptions import (
@@ -19,14 +18,24 @@ from schemas.processing_schemas import (
     VideoListResponse,
 )
 from services.job_service import JobService
+from services.video_render_service import VideoRenderService
+from utils.ffmpeg_helper import list_media_files, VIDEO_EXTENSIONS, AUDIO_EXTENSIONS
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessingService:
     """Service for video processing operations"""
 
-    def __init__(self, settings: Settings, job_service: JobService):
+    def __init__(
+        self,
+        settings: Settings,
+        job_service: JobService,
+        video_render_service: VideoRenderService,
+    ):
         self.settings = settings
         self.job_service = job_service
+        self.video_render_service = video_render_service
 
     def list_videos_in_folder(self, folder_path: str) -> VideoListResponse:
         """List all videos in a folder"""
@@ -38,7 +47,7 @@ class ProcessingService:
         if not folder.is_dir():
             raise FolderNotFoundError(f"Path is not a directory: {folder_path}")
 
-        videos = core.list_files(folder, core.VIDEO_EXT)
+        videos = list_media_files(folder, VIDEO_EXTENSIONS)
         return VideoListResponse(videos=[str(v) for v in videos], count=len(videos))
 
     def list_audios_in_folder(self, folder_path: str) -> AudioListResponse:
@@ -51,31 +60,18 @@ class ProcessingService:
         if not folder.is_dir():
             raise FolderNotFoundError(f"Path is not a directory: {folder_path}")
 
-        audios = core.list_files(folder, core.AUDIO_EXT)
+        audios = list_media_files(folder, AUDIO_EXTENSIONS)
         return AudioListResponse(audios=[str(a) for a in audios], count=len(audios))
 
     def get_default_config(self) -> dict:
         """Get default processing configuration"""
-        return core.default_cfg()
+        return ProcessingConfig().model_dump()
 
-    def config_to_dict(self, config: ProcessingConfig | None) -> dict:
-        """Convert ProcessingConfig to dict for batch_core"""
+    def _get_config(self, config: ProcessingConfig | None) -> ProcessingConfig:
+        """Get ProcessingConfig, using defaults if not provided"""
         if config is None:
-            return core.default_cfg()
-
-        return {
-            "position": config.position,
-            "margin_pct": config.margin_pct,
-            "duration_policy": config.duration_policy,
-            "fixed_seconds": config.fixed_seconds,
-            "canvas_size": config.canvas_size,
-            "fit_mode": config.fit_mode,
-            "music_gain_db": config.music_gain_db,
-            "mix_audio": config.mix_audio,
-            "preset": config.preset,
-            "outline_px": config.outline_px,
-            "fontsize_ratio": config.fontsize_ratio,
-        }
+            return ProcessingConfig()
+        return config
 
     async def process_single_video(
         self,
@@ -92,7 +88,7 @@ class ProcessingService:
                 job_id, status="processing", progress=50.0, message="Processing video..."
             )
 
-            cfg = self.config_to_dict(config)
+            cfg = self._get_config(config)
             video_path_obj = Path(video_path)
             audio_path_obj = Path(audio_path) if audio_path else None
             output_path_obj = Path(output_path)
@@ -102,12 +98,12 @@ class ProcessingService:
 
             output_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
-            success = core.run_one(
+            success = self.video_render_service.process_video(
                 video_path=video_path_obj,
-                audio_path=audio_path_obj,
-                text_segments=text_segments,
                 output_path=output_path_obj,
-                cfg=cfg,
+                text_segments=text_segments,
+                audio_path=audio_path_obj,
+                config=cfg,
             )
 
             if success:
@@ -124,6 +120,11 @@ class ProcessingService:
                 )
 
         except Exception as e:
+            logger.error(
+                f"Error processing single video: {str(e)}",
+                exc_info=True,
+                extra={"job_id": job_id, "video_path": video_path}
+            )
             self.job_service.update_job(
                 job_id, status="failed", progress=0.0, message=f"Error: {str(e)}"
             )
@@ -223,7 +224,7 @@ class ProcessingService:
                 )
                 return
 
-            cfg = self.config_to_dict(config)
+            cfg = self._get_config(config)
             outd = Path(output_folder)
             outd.mkdir(parents=True, exist_ok=True)
 
@@ -248,11 +249,21 @@ class ProcessingService:
                 out_path = video_folder / f"{abase}__{safe_tbase}.mp4"
 
                 try:
-                    success = core.run_one(vpath, apath, segments, out_path, cfg)
+                    success = self.video_render_service.process_video(
+                        video_path=vpath,
+                        output_path=out_path,
+                        text_segments=segments,
+                        audio_path=apath,
+                        config=cfg,
+                    )
                     if success:
                         output_files.append(str(out_path))
                 except Exception as e:
-                    print(f"Error processing job {i}: {e}")
+                    logger.error(
+                        f"Error processing batch job {i}: {str(e)}",
+                        exc_info=True,
+                        extra={"job_number": i, "total_jobs": total}
+                    )
 
             self.job_service.update_job(
                 job_id,

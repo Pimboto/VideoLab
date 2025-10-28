@@ -1,19 +1,18 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Button } from "@heroui/button";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Select, SelectItem } from "@heroui/select";
 import { Input } from "@heroui/input";
 import type { Selection } from "@heroui/table";
-import { Edit, Trash } from "iconsax-reactjs";
 
 import FileTable from "@/components/Dashboard/FileTable";
 import FolderSidebar from "@/components/Dashboard/FolderSidebar";
 import BulkActions from "@/components/Dashboard/BulkActions";
-import { API_URL, delay } from "@/lib/utils";
 import type { VideoFile, Folder } from "@/lib/types";
-import { useAuthFetch } from "@/lib/hooks/useAuthFetch";
+import { useFiles, useFolders, useUpload, useToast } from "@/lib/hooks";
 
 const VIDEO_COLUMNS = [
   { key: "preview", label: "PREVIEW" },
@@ -24,13 +23,18 @@ const VIDEO_COLUMNS = [
 ] as const;
 
 export default function VideosPage() {
-  const authFetch = useAuthFetch();
+  const { getToken } = useAuth();
+  const { listFiles, deleteFile, bulkDeleteFiles, bulkMoveFiles, renameFile, getVideoStreamUrl } = useFiles();
+  const { listFolders, createFolder, deleteFolder } = useFolders();
+  const { uploadFile, uploadMultipleFiles, uploadProgress, isUploading } = useUpload();
+  const toast = useToast();
+
   const [folders, setFolders] = useState<Folder[]>([]);
   const [videos, setVideos] = useState<VideoFile[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [selectedVideos, setSelectedVideos] = useState<Selection>(new Set());
+  const [videoUrls, setVideoUrls] = useState<Map<string, string>>(new Map());
 
   const { isOpen: isUploadOpen, onOpen: onUploadOpen, onClose: onUploadClose } = useDisclosure();
   const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
@@ -38,7 +42,7 @@ export default function VideosPage() {
   const { isOpen: isMoveOpen, onOpen: onMoveOpen, onClose: onMoveClose } = useDisclosure();
 
   const [uploadFolder, setUploadFolder] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewVideo, setPreviewVideo] = useState<VideoFile | null>(null);
   const [renameVideo, setRenameVideo] = useState<VideoFile | null>(null);
   const [newName, setNewName] = useState("");
@@ -49,137 +53,102 @@ export default function VideosPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedFolder) {
-      loadVideos(selectedFolder);
-    } else {
-      loadAllVideos();
-    }
+    loadAllVideos();
   }, [selectedFolder]);
 
   const loadFolders = async () => {
-    try {
-      const res = await authFetch(`${API_URL}/api/video-processor/folders/videos`);
-      const data = await res.json();
-      setFolders(data.folders || []);
-    } catch (error) {
-      console.error("Error loading folders:", error);
+    const response = await listFolders("videos");
+    if (response) {
+      setFolders(response.folders);
+    } else {
+      toast.error("Failed to load folders");
     }
   };
 
   const loadAllVideos = async () => {
     setLoading(true);
-    try {
-      const res = await authFetch(`${API_URL}/api/video-processor/files/videos`);
-      const data = await res.json();
-      setVideos(data.files || []);
-      setSelectedVideos(new Set<string>());
-    } catch (error) {
-      console.error("Error loading videos:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const response = await listFiles("videos", selectedFolder);
+    setLoading(false);
 
-  const loadVideos = async (folder: string) => {
-    setLoading(true);
-    try {
-      const params = `?subfolder=${folder}`;
-      const res = await authFetch(`${API_URL}/api/video-processor/files/videos${params}`);
-      const data = await res.json();
-      setVideos(data.files || []);
+    if (response) {
+      const files = response.files as unknown as VideoFile[];
+      setVideos(files);
       setSelectedVideos(new Set<string>());
-    } catch (error) {
-      console.error("Error loading videos:", error);
-    } finally {
-      setLoading(false);
+
+      // Pre-load stream URLs for all videos (only loads for visible videos now)
+      const urlMap = new Map<string, string>();
+      for (const video of files) {
+        const url = await getVideoStreamUrl(video.filepath);
+        if (url) {
+          urlMap.set(video.filepath, url);
+        }
+      }
+      setVideoUrls(urlMap);
+    } else {
+      toast.error("Failed to load video files");
     }
   };
 
   const handleCreateFolder = async (folderName: string) => {
-    try {
-      const res = await authFetch(`${API_URL}/api/video-processor/folders/create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          parent_category: "videos",
-          folder_name: folderName
-        })
-      });
-
-      if (res.ok) {
-        loadFolders();
-      }
-    } catch (error) {
-      console.error("Error creating folder:", error);
+    const result = await createFolder("videos", folderName);
+    if (result) {
+      toast.success("Folder created successfully");
+      loadFolders();
+    } else {
+      toast.error("Failed to create folder");
     }
   };
 
   const handleRenameFolder = async (oldName: string, newName: string) => {
-    // TODO: Implement rename folder API
-    console.log("Rename folder:", oldName, "to", newName);
-    await delay(500);
-    loadFolders();
+    toast.info("Folder rename not yet implemented");
   };
 
   const handleDeleteFolder = async (folderName: string) => {
-    // TODO: Implement delete folder API
-    console.log("Delete folder:", folderName);
-    await delay(500);
-    loadFolders();
-  };
-
-  const handleUpload = async () => {
-    if (!selectedFile || !uploadFolder) return;
-
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-      formData.append("subfolder", uploadFolder);
-
-      const res = await authFetch(`${API_URL}/api/video-processor/files/upload/video`, {
-        method: "POST",
-        body: formData
-      });
-
-      if (res.ok) {
-        setSelectedFile(null);
-        setUploadFolder("");
-        onUploadClose();
-        loadFolders();
-        if (selectedFolder) {
-          loadVideos(selectedFolder);
-        } else {
-          loadAllVideos();
-        }
-      }
-    } catch (error) {
-      console.error("Error uploading video:", error);
-    } finally {
-      setUploading(false);
+    const result = await deleteFolder("videos", folderName);
+    if (result) {
+      toast.success(`Folder "${folderName}" deleted successfully. ${result.files_deleted} file(s) removed.`);
+      loadFolders();
+      loadAllVideos();
+    } else {
+      toast.error("Failed to delete folder");
     }
   };
 
+  const handleUpload = async () => {
+    if (selectedFiles.length === 0 || !uploadFolder) return;
+
+    // Upload multiple files sequentially with progress
+    const results = await uploadMultipleFiles(selectedFiles, "video", uploadFolder);
+
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
+
+    if (successCount === selectedFiles.length) {
+      toast.success(`Successfully uploaded ${successCount} video${successCount > 1 ? 's' : ''}`);
+    } else if (successCount > 0) {
+      toast.warning(`Uploaded ${successCount} video(s), ${failCount} failed`);
+    } else {
+      toast.error("Failed to upload videos");
+    }
+
+    setSelectedFiles([]);
+    setUploadFolder("");
+    onUploadClose();
+    loadFolders();
+    loadAllVideos();
+  };
+
   const handleDelete = async (video: VideoFile) => {
-    if (!confirm(`Delete ${video.filename}?`)) return;
+    if (!confirm(`Delete ${getDisplayName(video)}?`)) return;
 
-    try {
-      const res = await authFetch(`${API_URL}/api/video-processor/files/delete`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filepath: video.filepath })
-      });
+    const success = await deleteFile(video.filepath);
 
-      if (res.ok) {
-        loadFolders();
-        if (selectedFolder) {
-          loadVideos(selectedFolder);
-        } else {
-          loadAllVideos();
-        }
-      }
-    } catch (error) {
-      console.error("Error deleting video:", error);
+    if (success) {
+      toast.success("Video deleted successfully");
+      loadFolders();
+      loadAllVideos();
+    } else {
+      toast.error("Failed to delete video");
     }
   };
 
@@ -188,92 +157,58 @@ export default function VideosPage() {
     if (selection.length === 0) return;
     if (!confirm(`Delete ${selection.length} selected videos?`)) return;
 
-    try {
-      const deletePromises = selection.map(filepath =>
-        authFetch(`${API_URL}/api/video-processor/files/delete`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filepath })
-        })
-      );
+    // Use bulk delete endpoint (best practice - single request instead of loop)
+    const result = await bulkDeleteFiles(selection as string[]);
 
-      await Promise.all(deletePromises);
-      setSelectedVideos(new Set<string>());
-      loadFolders();
-      if (selectedFolder) {
-        loadVideos(selectedFolder);
-      } else {
-        loadAllVideos();
-      }
-    } catch (error) {
-      console.error("Error deleting videos:", error);
+    setSelectedVideos(new Set<string>());
+
+    if (result.deleted === selection.length) {
+      toast.success(`Deleted ${result.deleted} video files successfully`);
+    } else if (result.deleted > 0) {
+      toast.warning(`Deleted ${result.deleted} of ${selection.length} video files. ${result.failed} failed.`);
+    } else {
+      toast.error("Failed to delete video files");
     }
+
+    loadFolders();
+    loadAllVideos();
   };
 
   const handleBulkMove = async () => {
     const selection = selectedVideos === "all" ? videos.map(v => v.filepath) : Array.from(selectedVideos);
     if (selection.length === 0 || !moveToFolder) return;
 
-    try {
-      const targetFolder = folders.find(f => f.name === moveToFolder);
-      if (!targetFolder) return;
+    const result = await bulkMoveFiles(selection as string[], moveToFolder);
 
-      const movePromises = selection.map(filepath => {
-        const filename = filepath.split(/[/\\]/).pop() || "";
-        const newPath = `${targetFolder.path}\\${filename}`;
+    setSelectedVideos(new Set<string>());
+    setMoveToFolder("");
+    onMoveClose();
 
-        return authFetch(`${API_URL}/api/video-processor/files/move`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            source_path: filepath,
-            destination_folder: newPath
-          })
-        });
-      });
-
-      await Promise.all(movePromises);
-      setSelectedVideos(new Set<string>());
-      setMoveToFolder("");
-      onMoveClose();
-      loadFolders();
-      if (selectedFolder) {
-        loadVideos(selectedFolder);
-      } else {
-        loadAllVideos();
-      }
-    } catch (error) {
-      console.error("Error moving videos:", error);
+    if (result.moved === selection.length) {
+      toast.success(`Moved ${result.moved} video files successfully to "${moveToFolder}"`);
+    } else if (result.moved > 0) {
+      toast.warning(`Moved ${result.moved} of ${selection.length} video files. ${result.failed} failed.`);
+    } else {
+      toast.error("Failed to move video files");
     }
+
+    loadFolders();
+    loadAllVideos();
   };
 
   const handleRename = async () => {
     if (!renameVideo || !newName.trim()) return;
 
-    try {
-      const newPath = renameVideo.filepath.replace(renameVideo.filename, newName);
-      const res = await authFetch(`${API_URL}/api/video-processor/files/move`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source_path: renameVideo.filepath,
-          destination_folder: newPath
-        })
-      });
+    const success = await renameFile(renameVideo.filepath, newName);
 
-      if (res.ok) {
-        setNewName("");
-        setRenameVideo(null);
-        onRenameClose();
-        loadFolders();
-        if (selectedFolder) {
-          loadVideos(selectedFolder);
-        } else {
-          loadAllVideos();
-        }
-      }
-    } catch (error) {
-      console.error("Error renaming video:", error);
+    if (success) {
+      toast.success("Video renamed successfully");
+      setRenameVideo(null);
+      setNewName("");
+      onRenameClose();
+      loadAllVideos();
+    } else {
+      toast.error("Failed to rename video");
     }
   };
 
@@ -286,6 +221,10 @@ export default function VideosPage() {
     setRenameVideo(video);
     setNewName(video.filename);
     onRenameOpen();
+  };
+
+  const getDisplayName = (video: VideoFile): string => {
+    return (video as any).metadata?.original_filename || video.filename;
   };
 
   const rowActions = useMemo(() => [
@@ -369,18 +308,35 @@ export default function VideosPage() {
               const video = file as VideoFile;
 
               if (columnKey === "preview") {
+                // Use thumbnail if available, otherwise fall back to video stream
+                const thumbnailUrl = video.metadata?.thumbnail_url;
+                const streamUrl = videoUrls.get(video.filepath);
+
                 return (
                   <div
                     className="w-20 h-12 bg-black rounded overflow-hidden cursor-pointer hover:opacity-80 transition"
                     onClick={() => openPreview(video)}
                   >
-                    <video
-                      className="w-full h-full object-cover"
-                      src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(video.filepath)}#t=0.1`}
-                      preload="metadata"
-                      muted
-                      playsInline
-                    />
+                    {thumbnailUrl ? (
+                      <img
+                        className="w-full h-full object-cover"
+                        src={thumbnailUrl}
+                        alt="Video thumbnail"
+                        loading="lazy"
+                      />
+                    ) : streamUrl ? (
+                      <video
+                        className="w-full h-full object-cover"
+                        src={`${streamUrl}#t=0.1`}
+                        preload="metadata"
+                        muted
+                        playsInline
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-white text-xs">
+                        Loading...
+                      </div>
+                    )}
                   </div>
                 );
               }
@@ -396,8 +352,6 @@ export default function VideosPage() {
           <ModalHeader>Upload Video</ModalHeader>
           <ModalBody>
             <Select
-              id="upload-video-folder"
-              name="uploadFolder"
               label="Select Folder"
               placeholder="Choose folder"
               selectedKeys={uploadFolder ? [uploadFolder] : []}
@@ -410,24 +364,48 @@ export default function VideosPage() {
               ))}
             </Select>
             <Input
-              id="upload-video-file"
-              name="videoFile"
               type="file"
               accept=".mp4,.mov,.m4v,.avi,.mkv"
-              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+              onChange={(e) => {
+                const files = e.target.files;
+                if (files) {
+                  setSelectedFiles(Array.from(files));
+                }
+              }}
+              // @ts-ignore - multiple attribute is valid
+              multiple
             />
+            {selectedFiles.length > 0 && (
+              <div className="text-sm text-default-500">
+                {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected
+              </div>
+            )}
+            {isUploading && (
+              <div className="mt-2">
+                <p className="text-sm text-default-500 mb-1">
+                  Uploading: {uploadProgress}%
+                  {uploadProgress >= 80 && uploadProgress < 100 && " (Processing on server...)"}
+                </p>
+                <div className="w-full bg-default-200 rounded-full h-2">
+                  <div
+                    className="bg-primary h-2 rounded-full transition-all"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={onUploadClose}>
+            <Button variant="light" onPress={onUploadClose} isDisabled={isUploading}>
               Cancel
             </Button>
             <Button
               color="primary"
               onPress={handleUpload}
-              isLoading={uploading}
-              isDisabled={!uploadFolder || !selectedFile}
+              isLoading={isUploading}
+              isDisabled={!uploadFolder || selectedFiles.length === 0}
             >
-              Upload
+              Upload {selectedFiles.length > 1 ? `${selectedFiles.length} Files` : ''}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -436,16 +414,21 @@ export default function VideosPage() {
       {/* Preview Modal */}
       <Modal isOpen={isPreviewOpen} onClose={onPreviewClose} size="5xl" scrollBehavior="inside">
         <ModalContent>
-          <ModalHeader>{previewVideo?.filename}</ModalHeader>
+          <ModalHeader>{previewVideo ? getDisplayName(previewVideo) : ""}</ModalHeader>
           <ModalBody>
-            {previewVideo && (
+            {previewVideo && videoUrls.get(previewVideo.filepath) ? (
               <video
                 controls
                 className="w-full max-h-[70vh] rounded-lg"
-                src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(previewVideo.filepath)}`}
+                src={videoUrls.get(previewVideo.filepath)}
+                autoPlay
               >
                 Your browser does not support video playback.
               </video>
+            ) : (
+              <div className="flex items-center justify-center min-h-[400px]">
+                <p className="text-default-500">Loading video...</p>
+              </div>
             )}
           </ModalBody>
           <ModalFooter>
@@ -460,8 +443,6 @@ export default function VideosPage() {
           <ModalHeader>Rename Video</ModalHeader>
           <ModalBody>
             <Input
-              id="rename-video-name"
-              name="newVideoName"
               label="New Name"
               placeholder="Enter new name"
               value={newName}
@@ -485,8 +466,6 @@ export default function VideosPage() {
           <ModalHeader>Move {getSelectedCount()} Videos</ModalHeader>
           <ModalBody>
             <Select
-              id="move-video-destination"
-              name="moveDestination"
               label="Destination Folder"
               placeholder="Choose folder"
               selectedKeys={moveToFolder ? [moveToFolder] : []}

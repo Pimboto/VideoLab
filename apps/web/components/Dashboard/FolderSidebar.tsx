@@ -41,9 +41,11 @@ export default function FolderSidebar({
 
   const { isOpen: isCreateOpen, onOpen: onCreateOpen, onClose: onCreateClose } = useDisclosure();
   const { isOpen: isRenameOpen, onOpen: onRenameOpen, onClose: onRenameClose } = useDisclosure();
+  const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure();
   const [newFolderName, setNewFolderName] = useState("");
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [deletingFolder, setDeletingFolder] = useState<{ name: string; fileCount: number } | null>(null);
 
   const handleCreate = async () => {
     if (!newFolderName.trim() || !onCreateFolder) return;
@@ -66,11 +68,16 @@ export default function FolderSidebar({
     onRenameOpen();
   };
 
-  const handleDelete = async (folderName: string) => {
-    if (!onDeleteFolder) return;
-    if (confirm(`Delete folder "${folderName}" and all its contents?`)) {
-      await onDeleteFolder(folderName);
-    }
+  const openDelete = (folderName: string, fileCount: number) => {
+    setDeletingFolder({ name: folderName, fileCount });
+    onDeleteOpen();
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingFolder || !onDeleteFolder) return;
+    await onDeleteFolder(deletingFolder.name);
+    setDeletingFolder(null);
+    onDeleteClose();
   };
 
   return (
@@ -151,7 +158,7 @@ export default function FolderSidebar({
                           color="danger"
                           className="text-danger"
                           startContent={<Trash size={16} />}
-                          onPress={() => handleDelete(folder.name)}
+                          onPress={() => openDelete(folder.name, folder.file_count)}
                         >
                           Delete
                         </DropdownItem>
@@ -227,6 +234,42 @@ export default function FolderSidebar({
                 isDisabled={!renameValue.trim()}
               >
                 Rename
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+      )}
+
+      {mounted && deletingFolder && (
+        <Modal isOpen={isDeleteOpen} onClose={onDeleteClose}>
+          <ModalContent>
+            <ModalHeader className="text-danger">Delete Folder</ModalHeader>
+            <ModalBody>
+              <div className="space-y-2">
+                <p>
+                  Are you sure you want to delete the folder <strong>&quot;{deletingFolder.name}&quot;</strong>?
+                </p>
+                {deletingFolder.fileCount > 0 && (
+                  <div className="p-3 rounded-lg bg-danger-50 border border-danger-200">
+                    <p className="text-sm text-danger-600">
+                      <strong>Warning:</strong> This will permanently delete {deletingFolder.fileCount} file{deletingFolder.fileCount !== 1 ? 's' : ''} in this folder.
+                    </p>
+                  </div>
+                )}
+                <p className="text-sm text-default-500">
+                  This action cannot be undone.
+                </p>
+              </div>
+            </ModalBody>
+            <ModalFooter>
+              <Button variant="light" onPress={onDeleteClose}>
+                Cancel
+              </Button>
+              <Button
+                color="danger"
+                onPress={confirmDelete}
+              >
+                Delete Folder
               </Button>
             </ModalFooter>
           </ModalContent>

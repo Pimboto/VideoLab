@@ -338,33 +338,32 @@ class StorageService:
         folder_name: str
     ) -> str:
         """
-        Create a folder (in Supabase Storage, folders are implicit).
-        
-        This creates a .gitkeep file to ensure the folder exists.
-        
+        Create a folder path (in Supabase Storage, folders are implicit).
+
+        Folders in Supabase Storage are created automatically when files are uploaded.
+        This method just validates the folder name and returns the path that will be used.
+
         Args:
             category: Storage category
             user_id: User ID
             folder_name: Folder name
-        
+
         Returns:
             Folder path
         """
         try:
+            # Validate bucket exists
             bucket = self.get_bucket_name(category)
+
+            # Sanitize and build folder path
             safe_name = self.sanitize_folder_name(folder_name)
             folder_path = f"{user_id}/{safe_name}"
-            
-            # Create a .gitkeep file to make the folder exist
-            placeholder_path = f"{folder_path}/.gitkeep"
-            
-            self.supabase.storage.from_(bucket).upload(
-                path=placeholder_path,
-                file=b"",
-                file_options={"content-type": "text/plain"}
-            )
-            
+
+            # Folders in Supabase Storage are implicit - they are created
+            # automatically when files are uploaded to them.
+            # No need to create placeholder files.
+
             return folder_path
-            
+
         except Exception as e:
             raise StorageError(f"Failed to create folder: {str(e)}")

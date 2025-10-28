@@ -53,13 +53,21 @@ export default function FileTable({
     setMounted(true);
   }, []);
 
+  // Get display name from metadata if available, otherwise use filename
+  const getDisplayName = (file: BaseFile): string => {
+    if (file.metadata && typeof file.metadata === 'object' && 'original_filename' in file.metadata) {
+      return (file.metadata as any).original_filename;
+    }
+    return file.filename;
+  };
+
   const defaultRenderCell = (file: BaseFile, columnKey: string): React.ReactNode => {
     switch (columnKey) {
       case "filename":
       case "name":
         return (
           <div className="max-w-xs">
-            <p className="text-sm font-medium truncate">{file.filename}</p>
+            <p className="text-sm font-medium truncate">{getDisplayName(file)}</p>
           </div>
         );
       case "size":

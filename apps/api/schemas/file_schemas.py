@@ -20,11 +20,31 @@ class FileDeleteRequest(BaseModel):
     filepath: str = Field(..., description="Absolute path to file to delete")
 
 
+class FileBulkDeleteRequest(BaseModel):
+    """Request to delete multiple files"""
+
+    filepaths: List[str] = Field(..., description="List of file paths to delete", min_length=1)
+
+
+class FileRenameRequest(BaseModel):
+    """Request to rename a file (display name only)"""
+
+    filepath: str = Field(..., description="File path")
+    new_name: str = Field(..., description="New display name (without extension)")
+
+
 class FileMoveRequest(BaseModel):
     """Request to move a file"""
 
     source_path: str = Field(..., description="Source file path")
     destination_folder: str = Field(..., description="Destination folder path")
+
+
+class FileBulkMoveRequest(BaseModel):
+    """Request to move multiple files"""
+
+    filepaths: List[str] = Field(..., description="List of file paths to move", min_length=1)
+    destination_folder: str = Field(..., description="Destination folder name")
 
 
 class FolderCreateRequest(BaseModel):
@@ -34,6 +54,15 @@ class FolderCreateRequest(BaseModel):
         ..., description="Parent category (videos, audios, csv, output)"
     )
     folder_name: str = Field(..., description="Name of the folder to create")
+
+
+class FolderDeleteRequest(BaseModel):
+    """Request to delete a folder"""
+
+    parent_category: str = Field(
+        ..., description="Parent category (videos, audios)"
+    )
+    folder_name: str = Field(..., description="Name of the folder to delete")
 
 
 class FolderListRequest(BaseModel):
@@ -79,12 +108,39 @@ class FileDeleteResponse(BaseModel):
     filepath: str = Field(..., description="Path of deleted file")
 
 
+class FileBulkDeleteResponse(BaseModel):
+    """Response after bulk file deletion"""
+
+    message: str = Field(..., description="Success message")
+    deleted_count: int = Field(..., description="Number of files successfully deleted", ge=0)
+    failed_count: int = Field(0, description="Number of files that failed to delete", ge=0)
+    failed_files: List[str] = Field(default_factory=list, description="List of file paths that failed to delete")
+
+
+class FileRenameResponse(BaseModel):
+    """Response after renaming file"""
+
+    message: str = Field(..., description="Success message")
+    filepath: str = Field(..., description="File path")
+    new_display_name: str = Field(..., description="New display name")
+
+
 class FileMoveResponse(BaseModel):
     """Response after moving file"""
 
     message: str = Field(..., description="Success message")
     source: str = Field(..., description="Original file path")
     destination: str = Field(..., description="New file path")
+
+
+class FileBulkMoveResponse(BaseModel):
+    """Response after bulk file move"""
+
+    message: str = Field(..., description="Success message")
+    moved_count: int = Field(..., description="Number of files successfully moved", ge=0)
+    failed_count: int = Field(0, description="Number of files that failed to move", ge=0)
+    failed_files: List[str] = Field(default_factory=list, description="List of file paths that failed to move")
+    destination_folder: str = Field(..., description="Destination folder name")
 
 
 class FolderInfo(BaseModel):
@@ -111,3 +167,11 @@ class FolderCreateResponse(BaseModel):
     message: str = Field(..., description="Success message")
     folder_name: str = Field(..., description="Name of created folder")
     folder_path: str = Field(..., description="Full path to created folder")
+
+
+class FolderDeleteResponse(BaseModel):
+    """Response after folder deletion"""
+
+    message: str = Field(..., description="Success message")
+    folder_name: str = Field(..., description="Name of deleted folder")
+    files_deleted: int = Field(0, description="Number of files deleted from folder")

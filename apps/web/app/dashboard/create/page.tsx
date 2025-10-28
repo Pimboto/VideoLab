@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Divider } from "@heroui/divider";
@@ -11,9 +12,7 @@ import { Progress } from "@heroui/progress";
 import { Chip } from "@heroui/chip";
 import { useRouter } from "next/navigation";
 import { fontRoboto, fontInter } from "@/config/fonts";
-import { useAuthFetch } from "@/lib/hooks/useAuthFetch";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { useFiles, useFolders, useProcessing, useJobs, useToast } from "@/lib/hooks";
 
 interface Folder {
   name: string;
@@ -36,8 +35,14 @@ interface JobStatus {
 }
 
 export default function CreatePage() {
-  const authFetch = useAuthFetch();
+  const { getToken } = useAuth();
   const router = useRouter();
+  const { listFiles, getCsvPreviewUrl, getVideoStreamUrl } = useFiles();
+  const { listFolders } = useFolders();
+  const { startBatchProcessing } = useProcessing();
+  const { pollJobStatus } = useJobs();
+  const toast = useToast();
+
   const [videoFolders, setVideoFolders] = useState<Folder[]>([]);
   const [audioFolders, setAudioFolders] = useState<Folder[]>([]);
   const [csvFiles, setCSVFiles] = useState<CSVFile[]>([]);
@@ -83,27 +88,29 @@ export default function CreatePage() {
 
   const loadData = async () => {
     try {
-      const [vRes, aRes, cRes] = await Promise.all([
-        authFetch(`${API_URL}/api/video-processor/folders/videos`),
-        authFetch(`${API_URL}/api/video-processor/folders/audios`),
-        authFetch(`${API_URL}/api/video-processor/files/csv`),
-      ]);
-
       const [vData, aData, cData] = await Promise.all([
-        vRes.json(),
-        aRes.json(),
-        cRes.json(),
+        listFolders("videos"),
+        listFolders("audios"),
+        listFiles("csv"),
       ]);
 
-      setVideoFolders(vData.folders || []);
-      setAudioFolders(aData.folders || []);
-      setCSVFiles(cData.files || []);
+      if (vData) {
+        setVideoFolders(vData.folders || []);
+        if (vData.folders?.length) setSelectedVideoFolder(vData.folders[0].path);
+      }
 
-      if (vData.folders?.length) setSelectedVideoFolder(vData.folders[0].path);
-      if (aData.folders?.length) setSelectedAudioFolder(aData.folders[0].path);
-      if (cData.files?.length) setSelectedCSV(cData.files[0].filepath);
+      if (aData) {
+        setAudioFolders(aData.folders || []);
+        if (aData.folders?.length) setSelectedAudioFolder(aData.folders[0].path);
+      }
+
+      if (cData) {
+        setCSVFiles(cData.files as unknown as CSVFile[] || []);
+        if (cData.files?.length) setSelectedCSV(cData.files[0].filepath);
+      }
     } catch (error) {
       console.error("Error loading data:", error);
+      toast.error("Failed to load data");
     }
   };
 
@@ -112,17 +119,11 @@ export default function CreatePage() {
       const folderName = videoFolders.find((f) => f.path === folderPath)?.name;
       if (!folderName) return;
 
-      const params = `?subfolder=${folderName}`;
-      const res = await authFetch(
-        `${API_URL}/api/video-processor/files/videos${params}`
-      );
-      const data = await res.json();
+      const data = await listFiles("videos");
 
-      if (data.files && data.files.length > 0) {
+      if (data && data.files && data.files.length > 0) {
         const firstVideo = data.files[0];
-        setPreviewVideoSrc(
-          `${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(firstVideo.filepath)}`
-        );
+        setPreviewVideoSrc(getVideoStreamUrl(firstVideo.filepath));
       }
     } catch (error) {
       console.error("Error loading preview video:", error);
@@ -131,67 +132,82 @@ export default function CreatePage() {
 
   const checkJobStatus = async (jobId: string) => {
     try {
-      const res = await authFetch(
-        `${API_URL}/api/video-processor/processing/status/${jobId}`
-      );
-      const data = await res.json();
-      setJobStatus(data);
+      const data = await pollJobStatus(jobId);
+      if (data) {
+        setJobStatus(data);
 
-      if (data.status === "completed" || data.status === "failed") {
-        setProcessing(false);
+        if (data.status === "completed" || data.status === "failed") {
+          setProcessing(false);
+        }
       }
     } catch (error) {
       console.error("Error checking job status:", error);
+      toast.error("Failed to check job status");
     }
   };
 
   const handleStartBatch = async () => {
     if (!selectedVideoFolder || !selectedAudioFolder || !selectedCSV) {
-      alert("Please select video folder, audio folder, and CSV file");
+      toast.error("Please select video folder, audio folder, and CSV file");
       return;
     }
 
     setProcessing(true);
 
     try {
-      const res = await authFetch(
-        `${API_URL}/api/video-processor/files/preview/csv?filepath=${encodeURIComponent(selectedCSV)}`
-      );
+      // Get CSV preview URL and fetch combinations
+      const token = await getToken();
+      if (!token) {
+        toast.error("Not authenticated");
+        setProcessing(false);
+        return;
+      }
 
-      const csvData = await res.json();
+      const csvPreviewUrl = getCsvPreviewUrl(selectedCSV);
+      const csvRes = await fetch(csvPreviewUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!csvRes.ok) {
+        toast.error("Failed to load CSV file");
+        setProcessing(false);
+        return;
+      }
+
+      const csvData = await csvRes.json();
       const combinations = csvData.combinations || [];
 
-      const batchRes = await authFetch(
-        `${API_URL}/api/video-processor/processing/process-batch`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            video_folder: selectedVideoFolder,
-            audio_folder: selectedAudioFolder,
-            text_combinations: combinations,
-            output_folder: "D:/Work/video/output",
-            unique_mode: uniqueMode,
-            unique_amount: parseInt(uniqueAmount),
-            config: {
-              position,
-              preset,
-              fit_mode: fitMode,
-            },
-          }),
-        }
-      );
-
-      const batchData = await batchRes.json();
-      setJobStatus({
-        job_id: batchData.job_id,
-        status: "pending",
-        progress: 0,
-        message: batchData.message,
-        output_files: [],
+      // Start batch processing
+      const result = await startBatchProcessing({
+        videoFolder: selectedVideoFolder,
+        audioFolder: selectedAudioFolder,
+        textCombinations: combinations,
+        outputFolder: "D:/Work/video/output",
+        uniqueMode,
+        uniqueAmount: parseInt(uniqueAmount),
+        config: {
+          position,
+          preset,
+          fitMode,
+        },
       });
+
+      if (result) {
+        setJobStatus({
+          job_id: result.job_id,
+          status: "pending",
+          progress: 0,
+          message: result.message,
+          output_files: [],
+        });
+        toast.success("Batch processing started");
+      } else {
+        toast.error("Failed to start batch processing");
+        setProcessing(false);
+      }
     } catch (error) {
       console.error("Error starting batch:", error);
+      toast.error("Error starting batch processing");
       setProcessing(false);
     }
   };

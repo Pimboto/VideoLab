@@ -131,6 +131,8 @@ class APIClient {
    * @param token - Clerk auth token
    * @param onProgress - Optional progress callback (0-100)
    * @returns The response data
+   *
+   * Note: Progress represents HTTP upload (0-80%) then server processing to Supabase (80-100%)
    */
   async upload<T = any>(
     endpoint: string,
@@ -141,18 +143,30 @@ class APIClient {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
 
-      // Track upload progress
+      // Track upload progress (0-80% for HTTP upload)
       if (onProgress) {
         xhr.upload.addEventListener("progress", (e) => {
           if (e.lengthComputable) {
-            const progress = (e.loaded / e.total) * 100;
-            onProgress(progress);
+            // HTTP upload is 80% of total progress
+            // Remaining 20% is server processing (uploading to Supabase Storage)
+            const httpProgress = (e.loaded / e.total) * 80;
+            onProgress(Math.round(httpProgress));
           }
+        });
+
+        // When upload completes, show 80% while waiting for server response
+        xhr.upload.addEventListener("load", () => {
+          onProgress(80);
         });
       }
 
       // Handle completion
       xhr.addEventListener("load", () => {
+        // Set to 100% when server responds
+        if (onProgress) {
+          onProgress(100);
+        }
+
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const data = JSON.parse(xhr.responseText);
@@ -207,11 +221,14 @@ export const API_ENDPOINTS = {
     UPLOAD_AUDIO: "/api/video-processor/files/upload/audio",
     UPLOAD_CSV: "/api/video-processor/files/upload/csv",
     DELETE: "/api/video-processor/files/delete",
+    BULK_DELETE: "/api/video-processor/files/bulk-delete",
+    RENAME: "/api/video-processor/files/rename",
     MOVE: "/api/video-processor/files/move",
-    STREAM_VIDEO: (filename: string) =>
-      `/api/video-processor/files/stream/video?filename=${encodeURIComponent(filename)}`,
-    STREAM_AUDIO: (filename: string) =>
-      `/api/video-processor/files/stream/audio?filename=${encodeURIComponent(filename)}`,
+    BULK_MOVE: "/api/video-processor/files/bulk-move",
+    STREAM_VIDEO: (filepath: string) =>
+      `/api/video-processor/files/stream/video?filepath=${encodeURIComponent(filepath)}`,
+    STREAM_AUDIO: (filepath: string) =>
+      `/api/video-processor/files/stream/audio?filepath=${encodeURIComponent(filepath)}`,
     PREVIEW_CSV: (filepath: string) =>
       `/api/video-processor/files/preview/csv?filepath=${encodeURIComponent(filepath)}`,
   },
@@ -220,6 +237,7 @@ export const API_ENDPOINTS = {
     LIST: (category: string) =>
       `/api/video-processor/folders/${category}`,
     CREATE: "/api/video-processor/folders/create",
+    DELETE: "/api/video-processor/folders/delete",
   },
   // Processing
   PROCESSING: {
