@@ -1,17 +1,26 @@
 """
-Storage service for Supabase Storage operations
+Storage service for AWS S3 operations
 
-This service handles all file storage operations using Supabase Storage.
-Files are organized by user_id and category (videos, audios, csv, output).
+This service handles all file storage operations using AWS S3 + CloudFront.
+Files are organized by user_id and category (videos, audios, csv, output, library).
+
+Architecture:
+- users/{user_id}/videos/{subfolder?}/filename.ext     # User private files
+- users/{user_id}/audios/{subfolder?}/filename.ext
+- users/{user_id}/csv/filename.ext
+- users/{user_id}/output/filename.ext
+- library/videos/{category}/filename.ext               # Global shared library
+- library/audios/{category}/filename.ext
+- library/images/{category}/filename.ext
 """
 import datetime
 import hashlib
+import logging
 import re
 from typing import List, Optional
 from pathlib import Path
 
 from fastapi import UploadFile
-from supabase import Client
 
 from core.config import Settings
 from core.exceptions import (
@@ -21,22 +30,32 @@ from core.exceptions import (
     InvalidFileTypeError,
     StorageError,
 )
-from utils.supabase_client import get_supabase_client
+from utils.aws_s3_client import S3Client, get_s3_client
+
+logger = logging.getLogger(__name__)
 
 
 class StorageService:
-    """Service for handling Supabase Storage operations"""
+    """Service for handling AWS S3 Storage operations"""
 
-    BUCKET_MAP = {
+    # Category to folder mapping
+    CATEGORY_MAP = {
         "videos": "videos",
         "audios": "audios",
         "csv": "csv",
         "output": "output",
     }
 
-    def __init__(self, settings: Settings):
+    # Library categories (global shared content)
+    LIBRARY_CATEGORIES = {
+        "videos": "videos",
+        "audios": "audios",
+        "images": "images",
+    }
+
+    def __init__(self, settings: Settings, s3_client: Optional[S3Client] = None):
         self.settings = settings
-        self.supabase: Client = get_supabase_client()
+        self.s3_client = s3_client or get_s3_client()
 
     def validate_file_extension(self, filename: str, file_type: str) -> bool:
         """Validate if file extension is allowed for the given type"""
@@ -48,6 +67,8 @@ class StorageService:
             return ext in self.settings.audio_extensions
         elif file_type == "csv":
             return ext in self.settings.csv_extensions
+        elif file_type == "image":
+            return ext in {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
         return False
 
@@ -57,6 +78,7 @@ class StorageService:
             "video": self.settings.max_video_size,
             "audio": self.settings.max_audio_size,
             "csv": self.settings.max_csv_size,
+            "image": 10 * 1024 * 1024,  # 10 MB for images
         }
 
         max_size = limits.get(file_type)
@@ -66,41 +88,117 @@ class StorageService:
         return file_size <= max_size
 
     def generate_unique_filename(self, original_filename: str) -> str:
-        """Generate unique filename with timestamp and hash"""
+        """Generate unique filename with timestamp and hash (DEPRECATED - for backwards compatibility)"""
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         name = Path(original_filename).stem
         ext = Path(original_filename).suffix
         random_hash = hashlib.md5(f"{name}{timestamp}".encode()).hexdigest()[:8]
         return f"{name}_{timestamp}_{random_hash}{ext}"
 
+    def get_unique_filename_no_timestamp(
+        self,
+        user_id: str,
+        category: str,
+        original_filename: str,
+        subfolder: Optional[str] = None,
+        is_library: bool = False
+    ) -> str:
+        """
+        Get unique filename by adding (1), (2), etc if file already exists.
+
+        Examples:
+            video.mp4 -> video.mp4 (if doesn't exist)
+            video.mp4 -> video (1).mp4 (if video.mp4 exists)
+            video.mp4 -> video (2).mp4 (if video (1).mp4 exists)
+
+        Args:
+            user_id: User ID
+            category: Storage category
+            original_filename: Original filename
+            subfolder: Optional subfolder
+            is_library: Whether this is library content
+
+        Returns:
+            Unique filename
+
+        Raises:
+            StorageError: If too many duplicates (safety limit)
+        """
+        # Build path with original filename
+        test_path = self.build_storage_path(
+            user_id, category, original_filename, subfolder, is_library
+        )
+
+        # If doesn't exist, use original name
+        if not self.s3_client.file_exists(test_path):
+            return original_filename
+
+        # Extract stem and extension
+        stem = Path(original_filename).stem
+        ext = Path(original_filename).suffix
+
+        # Try with (1), (2), (3)...
+        counter = 1
+        while True:
+            new_filename = f"{stem} ({counter}){ext}"
+            test_path = self.build_storage_path(
+                user_id, category, new_filename, subfolder, is_library
+            )
+
+            if not self.s3_client.file_exists(test_path):
+                return new_filename
+
+            counter += 1
+
+            # Safety limit to prevent infinite loop
+            if counter > 1000:
+                raise StorageError(
+                    f"Too many duplicate files for '{original_filename}'. "
+                    f"Maximum 1000 duplicates allowed."
+                )
+
     def sanitize_folder_name(self, folder_name: str) -> str:
         """Sanitize folder name to remove invalid characters"""
         return re.sub(r"[^\w\-_]", "_", folder_name)
 
-    def get_bucket_name(self, category: str) -> str:
-        """Get Supabase Storage bucket name for a category"""
-        bucket = self.BUCKET_MAP.get(category)
-        if not bucket:
+    def get_category_folder(self, category: str) -> str:
+        """Get folder name for a category"""
+        folder = self.CATEGORY_MAP.get(category)
+        if not folder:
             raise InvalidCategoryError(
                 f"Invalid category: {category}. "
-                f"Allowed: {', '.join(self.BUCKET_MAP.keys())}"
+                f"Allowed: {', '.join(self.CATEGORY_MAP.keys())}"
             )
-        return bucket
+        return folder
 
     def build_storage_path(
         self,
         user_id: str,
+        category: str,
         filename: str,
-        subfolder: Optional[str] = None
+        subfolder: Optional[str] = None,
+        is_library: bool = False
     ) -> str:
         """
-        Build storage path for a file.
-        Format: {user_id}/{subfolder}/{filename} or {user_id}/{filename}
+        Build storage path (S3 key) for a file.
+
+        User files: users/{user_id}/{category}/{subfolder?}/{filename}
+        Library: library/{category}/{subfolder?}/{filename}
         """
-        if subfolder:
-            safe_subfolder = self.sanitize_folder_name(subfolder)
-            return f"{user_id}/{safe_subfolder}/{filename}"
-        return f"{user_id}/{filename}"
+        category_folder = self.get_category_folder(category)
+
+        if is_library:
+            # Library path: library/videos/category/filename.ext
+            if subfolder:
+                safe_subfolder = self.sanitize_folder_name(subfolder)
+                return f"library/{category_folder}/{safe_subfolder}/{filename}"
+            return f"library/{category_folder}/{filename}"
+        else:
+            # User path: users/user_id/videos/subfolder/filename.ext
+            if subfolder:
+                safe_subfolder = self.sanitize_folder_name(subfolder)
+                return f"users/{user_id}/{category_folder}/{safe_subfolder}/{filename}"
+            return f"users/{user_id}/{category_folder}/{filename}"
 
     async def upload_file(
         self,
@@ -108,58 +206,122 @@ class StorageService:
         category: str,
         upload_file: UploadFile,
         subfolder: Optional[str] = None,
-        unique_filename: Optional[str] = None
+        unique_filename: Optional[str] = None,
+        is_library: bool = False
     ) -> tuple[str, int]:
         """
-        Upload file to Supabase Storage.
-        
+        Upload file to AWS S3.
+
+        NEW: Uses (1), (2) naming for duplicates instead of timestamps.
+
         Args:
             user_id: User ID for organization
             category: Storage category (videos, audios, csv, output)
             upload_file: FastAPI UploadFile
             subfolder: Optional subfolder for organization
             unique_filename: Optional unique filename (generated if not provided)
-        
+            is_library: Whether this is library (global) content
+
         Returns:
             Tuple of (storage_path, file_size)
-        
+
         Raises:
             StorageError: If upload fails
         """
         try:
-            # Get bucket
-            bucket = self.get_bucket_name(category)
-            
             # Generate unique filename if not provided
+            # NEW: Uses (1), (2) for duplicates instead of timestamp
             if not unique_filename:
-                unique_filename = self.generate_unique_filename(upload_file.filename)
-            
-            # Build storage path
-            storage_path = self.build_storage_path(user_id, unique_filename, subfolder)
-            
+                unique_filename = self.get_unique_filename_no_timestamp(
+                    user_id=user_id,
+                    category=category,
+                    original_filename=upload_file.filename,
+                    subfolder=subfolder,
+                    is_library=is_library
+                )
+
+            # Build storage path (S3 key)
+            storage_path = self.build_storage_path(
+                user_id, category, unique_filename, subfolder, is_library
+            )
+
             # Read file content
             await upload_file.seek(0)
             file_content = await upload_file.read()
             file_size = len(file_content)
-            
-            # Upload to Supabase Storage
-            result = self.supabase.storage.from_(bucket).upload(
-                path=storage_path,
-                file=file_content,
-                file_options={
-                    "content-type": upload_file.content_type or "application/octet-stream",
-                    "cache-control": "3600",
-                    "upsert": "false"  # Fail if file already exists
+
+            # Upload to S3
+            self.s3_client.upload_file(
+                key=storage_path,
+                file_content=file_content,
+                content_type=upload_file.content_type or "application/octet-stream",
+                metadata={"original_filename": upload_file.filename}
+            )
+
+            logger.info(
+                f"File uploaded successfully: {storage_path}",
+                extra={"user_id": user_id, "size": file_size, "file_name": unique_filename}
+            )
+
+            return storage_path, file_size
+
+        except Exception as e:
+            raise StorageError(f"Failed to upload file to S3: {str(e)}")
+
+    async def upload_output_file(
+        self,
+        user_id: str,
+        job_id: str,
+        filename: str,
+        file_content: bytes,
+        content_type: str = "video/mp4"
+    ) -> tuple[str, int]:
+        """
+        Upload output file to S3 with temporary tag for lifecycle deletion.
+
+        Output files are automatically deleted after 24 hours by S3 lifecycle rule.
+
+        Args:
+            user_id: User ID
+            job_id: Processing job ID (used for folder organization)
+            filename: Output filename
+            file_content: File content as bytes
+            content_type: MIME type
+
+        Returns:
+            Tuple of (storage_path, file_size)
+
+        Raises:
+            StorageError: If upload fails
+        """
+        try:
+            # Build storage path: users/{user_id}/output/{job_id}/{filename}
+            storage_path = f"users/{user_id}/output/{job_id}/{filename}"
+            file_size = len(file_content)
+
+            # Upload to S3 with temporary tag
+            # S3 lifecycle rule will delete after 24h based on this tag
+            self.s3_client.upload_file_with_tags(
+                key=storage_path,
+                file_content=file_content,
+                tags={"purpose": "temporary"},  # For lifecycle rule
+                content_type=content_type,
+                metadata={
+                    "job_id": job_id,
+                    "user_id": user_id,
+                    "original_filename": filename
                 }
             )
-            
-            if not result:
-                raise StorageError(f"Failed to upload file to {bucket}/{storage_path}")
-            
+
+            logger.info(
+                f"Output file uploaded with temporary tag: {storage_path}",
+                extra={"user_id": user_id, "job_id": job_id, "size": file_size}
+            )
+
             return storage_path, file_size
-            
+
         except Exception as e:
-            raise StorageError(f"Failed to upload file: {str(e)}")
+            raise StorageError(f"Failed to upload output file to S3: {str(e)}")
 
     async def download_file(
         self,
@@ -167,66 +329,55 @@ class StorageService:
         storage_path: str
     ) -> bytes:
         """
-        Download file from Supabase Storage.
-        
+        Download file from AWS S3.
+
         Args:
-            category: Storage category
-            storage_path: Path in storage bucket
-        
+            category: Storage category (for validation)
+            storage_path: S3 key (path in bucket)
+
         Returns:
             File content as bytes
-        
+
         Raises:
             FileNotFoundError: If file doesn't exist
             StorageError: If download fails
         """
         try:
-            bucket = self.get_bucket_name(category)
-            
-            result = self.supabase.storage.from_(bucket).download(storage_path)
-            
-            if not result:
-                raise FileNotFoundError(f"File not found: {bucket}/{storage_path}")
-            
-            return result
-            
+            return self.s3_client.download_file(key=storage_path)
+
         except FileNotFoundError:
             raise
         except Exception as e:
-            raise StorageError(f"Failed to download file: {str(e)}")
+            raise StorageError(f"Failed to download file from S3: {str(e)}")
 
     def get_public_url(
         self,
         category: str,
-        storage_path: str
+        storage_path: str,
+        expires_in: int = 3600,
+        use_cloudfront: bool = True
     ) -> str:
         """
-        Get public URL for a file (or signed URL if bucket is private).
-        
+        Get public URL for a file (CloudFront or S3 presigned).
+
         Args:
             category: Storage category
-            storage_path: Path in storage bucket
-        
+            storage_path: S3 key
+            expires_in: URL expiration in seconds (default: 1 hour)
+            use_cloudfront: Use CloudFront URL (default: True)
+
         Returns:
-            Public or signed URL
+            Public or presigned URL
         """
         try:
-            bucket = self.get_bucket_name(category)
-            
-            # Get signed URL for private buckets (expires in 1 hour)
-            result = self.supabase.storage.from_(bucket).create_signed_url(
-                path=storage_path,
-                expires_in=3600  # 1 hour
+            return self.s3_client.generate_presigned_url(
+                key=storage_path,
+                expires_in=expires_in,
+                use_cloudfront=use_cloudfront
             )
-            
-            if result and "signedURL" in result:
-                return result["signedURL"]
-            
-            # Fallback to public URL (might not work if bucket is private)
-            return self.supabase.storage.from_(bucket).get_public_url(storage_path)
-            
+
         except Exception as e:
-            raise StorageError(f"Failed to get file URL: {str(e)}")
+            raise StorageError(f"Failed to generate file URL: {str(e)}")
 
     async def delete_file(
         self,
@@ -234,63 +385,74 @@ class StorageService:
         storage_path: str
     ) -> None:
         """
-        Delete file from Supabase Storage.
-        
+        Delete file from AWS S3.
+
         Args:
             category: Storage category
-            storage_path: Path in storage bucket
-        
+            storage_path: S3 key
+
         Raises:
-            FileNotFoundError: If file doesn't exist
             StorageError: If deletion fails
         """
         try:
-            bucket = self.get_bucket_name(category)
-            
-            result = self.supabase.storage.from_(bucket).remove([storage_path])
-            
-            if not result:
-                raise StorageError(f"Failed to delete file: {bucket}/{storage_path}")
-            
+            self.s3_client.delete_file(key=storage_path)
+
         except Exception as e:
-            if "not found" in str(e).lower():
-                raise FileNotFoundError(f"File not found: {bucket}/{storage_path}")
-            raise StorageError(f"Failed to delete file: {str(e)}")
+            raise StorageError(f"Failed to delete file from S3: {str(e)}")
+
+    async def delete_files_batch(self, storage_paths: list[str]) -> tuple[int, int]:
+        """
+        Delete multiple files from S3 in batch.
+
+        Args:
+            storage_paths: List of S3 keys
+
+        Returns:
+            Tuple of (success_count, failure_count)
+        """
+        try:
+            return self.s3_client.delete_files_batch(keys=storage_paths)
+        except Exception as e:
+            raise StorageError(f"Failed to batch delete files: {str(e)}")
 
     async def list_files(
         self,
         category: str,
         user_id: str,
-        subfolder: Optional[str] = None
+        subfolder: Optional[str] = None,
+        is_library: bool = False
     ) -> List[dict]:
         """
-        List files in a user's folder.
-        
+        List files in a user's folder or library.
+
         Args:
             category: Storage category
             user_id: User ID
             subfolder: Optional subfolder
-        
+            is_library: Whether to list library files
+
         Returns:
             List of file metadata dicts
         """
         try:
-            bucket = self.get_bucket_name(category)
-            
-            # Build path prefix
-            if subfolder:
-                safe_subfolder = self.sanitize_folder_name(subfolder)
-                path = f"{user_id}/{safe_subfolder}"
+            # Build prefix
+            category_folder = self.get_category_folder(category)
+
+            if is_library:
+                if subfolder:
+                    safe_subfolder = self.sanitize_folder_name(subfolder)
+                    prefix = f"library/{category_folder}/{safe_subfolder}/"
+                else:
+                    prefix = f"library/{category_folder}/"
             else:
-                path = user_id
-            
-            result = self.supabase.storage.from_(bucket).list(path)
-            
-            if not result:
-                return []
-            
-            return result
-            
+                if subfolder:
+                    safe_subfolder = self.sanitize_folder_name(subfolder)
+                    prefix = f"users/{user_id}/{category_folder}/{safe_subfolder}/"
+                else:
+                    prefix = f"users/{user_id}/{category_folder}/"
+
+            return self.s3_client.list_files(prefix=prefix)
+
         except Exception as e:
             # If path doesn't exist, return empty list instead of error
             return []
@@ -302,68 +464,162 @@ class StorageService:
         destination_path: str
     ) -> None:
         """
-        Move file to new location (copy + delete).
-        
+        Move file to new location (copy + delete in S3).
+
         Args:
             category: Storage category
-            source_path: Source path in bucket
-            destination_path: Destination path in bucket
-        
+            source_path: Source S3 key
+            destination_path: Destination S3 key
+
         Raises:
             FileNotFoundError: If source file doesn't exist
             StorageError: If move fails
         """
         try:
-            bucket = self.get_bucket_name(category)
-            
-            # Supabase doesn't have a native move operation
-            # We need to download, upload to new location, and delete old
-            result = self.supabase.storage.from_(bucket).move(
-                from_path=source_path,
-                to_path=destination_path
+            self.s3_client.move_file(
+                source_key=source_path,
+                destination_key=destination_path
             )
-            
-            if not result:
-                raise StorageError(f"Failed to move file from {source_path} to {destination_path}")
-            
+
+        except FileNotFoundError:
+            raise
         except Exception as e:
-            if "not found" in str(e).lower():
-                raise FileNotFoundError(f"Source file not found: {source_path}")
-            raise StorageError(f"Failed to move file: {str(e)}")
+            raise StorageError(f"Failed to move file in S3: {str(e)}")
 
     async def create_folder(
         self,
         category: str,
         user_id: str,
-        folder_name: str
+        folder_name: str,
+        is_library: bool = False
     ) -> str:
         """
-        Create a folder path (in Supabase Storage, folders are implicit).
+        Create a folder path.
 
-        Folders in Supabase Storage are created automatically when files are uploaded.
-        This method just validates the folder name and returns the path that will be used.
+        In S3, folders are implicit (created when files are uploaded).
+        This method just validates the folder name and returns the path.
 
         Args:
             category: Storage category
             user_id: User ID
             folder_name: Folder name
+            is_library: Whether this is library content
 
         Returns:
-            Folder path
+            Folder path (S3 prefix)
         """
         try:
-            # Validate bucket exists
-            bucket = self.get_bucket_name(category)
-
-            # Sanitize and build folder path
+            # Validate and sanitize
+            category_folder = self.get_category_folder(category)
             safe_name = self.sanitize_folder_name(folder_name)
-            folder_path = f"{user_id}/{safe_name}"
 
-            # Folders in Supabase Storage are implicit - they are created
-            # automatically when files are uploaded to them.
-            # No need to create placeholder files.
+            if is_library:
+                folder_path = f"library/{category_folder}/{safe_name}"
+            else:
+                folder_path = f"users/{user_id}/{category_folder}/{safe_name}"
 
+            # Folders in S3 are implicit - they are created automatically
+            # when files are uploaded to them
             return folder_path
 
         except Exception as e:
-            raise StorageError(f"Failed to create folder: {str(e)}")
+            raise StorageError(f"Failed to create folder path: {str(e)}")
+
+    def file_exists(self, storage_path: str) -> bool:
+        """
+        Check if file exists in S3.
+
+        Args:
+            storage_path: S3 key
+
+        Returns:
+            True if exists, False otherwise
+        """
+        return self.s3_client.file_exists(key=storage_path)
+
+    async def rename_file_s3(
+        self,
+        user_id: str,
+        category: str,
+        old_filepath: str,
+        new_filename: str,
+        subfolder: Optional[str] = None,
+        is_library: bool = False
+    ) -> str:
+        """
+        Rename file in S3 (REAL rename with copy + delete).
+
+        Handles duplicate names by adding (1), (2), etc.
+
+        Args:
+            user_id: User ID
+            category: Storage category
+            old_filepath: Current S3 path (full path)
+            new_filename: New filename (just the filename, not full path)
+            subfolder: Subfolder if applicable
+            is_library: Whether this is library content
+
+        Returns:
+            New filepath (full S3 path)
+
+        Raises:
+            FileNotFoundError: If source file doesn't exist
+            StorageError: If rename fails
+
+        Examples:
+            >>> rename_file_s3(
+            ...     user_id="123",
+            ...     category="videos",
+            ...     old_filepath="users/123/videos/folder1/old_video.mp4",
+            ...     new_filename="new_video.mp4",
+            ...     subfolder="folder1"
+            ... )
+            "users/123/videos/folder1/new_video.mp4"
+
+            If "new_video.mp4" already exists:
+            "users/123/videos/folder1/new_video (1).mp4"
+        """
+        try:
+            # Verify source exists
+            if not self.s3_client.file_exists(old_filepath):
+                raise FileNotFoundError(f"File not found: {old_filepath}")
+
+            # Get unique filename (handles duplicates with (1), (2)...)
+            unique_new_filename = self.get_unique_filename_no_timestamp(
+                user_id=user_id,
+                category=category,
+                original_filename=new_filename,
+                subfolder=subfolder,
+                is_library=is_library
+            )
+
+            # Build new full path
+            new_filepath = self.build_storage_path(
+                user_id=user_id,
+                category=category,
+                filename=unique_new_filename,
+                subfolder=subfolder,
+                is_library=is_library
+            )
+
+            # Copy to new location
+            self.s3_client.copy_object(
+                source_key=old_filepath,
+                destination_key=new_filepath
+            )
+
+            # Delete old file
+            self.s3_client.delete_file(key=old_filepath)
+
+            logger.info(
+                f"File renamed in S3: {old_filepath} → {new_filepath}",
+                extra={"user_id": user_id, "old_name": old_filepath.split('/')[-1], "new_name": unique_new_filename}
+            )
+
+            return new_filepath
+
+        except FileNotFoundError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to rename file in S3: {str(e)}", exc_info=True)
+            raise StorageError(f"Failed to rename file: {str(e)}")

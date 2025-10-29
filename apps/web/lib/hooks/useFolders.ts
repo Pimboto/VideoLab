@@ -5,13 +5,7 @@
 import { useAuth } from "@clerk/nextjs";
 import { useState, useCallback } from "react";
 import { apiClient, API_ENDPOINTS } from "@/lib/api/client";
-
-export interface Folder {
-  name: string;
-  path: string;
-  file_count: number;
-  total_size_mb: number;
-}
+import type { Folder } from "@/lib/types";
 
 export interface FolderListResponse {
   folders: Folder[];

@@ -1,6 +1,6 @@
 /**
  * Custom hook for file operations
- * Handles listing, deleting, and moving files with Supabase storage
+ * Handles listing, deleting, and moving files with AWS S3 storage
  */
 import { useAuth } from "@clerk/nextjs";
 import { useState, useCallback } from "react";
@@ -253,7 +253,7 @@ export function useFiles() {
   );
 
   /**
-   * Get signed stream URL for video file from Supabase
+   * Get CloudFront stream URL for video file from AWS S3
    * Must be called before rendering video tag
    */
   const getVideoStreamUrl = useCallback(
@@ -284,7 +284,7 @@ export function useFiles() {
   );
 
   /**
-   * Get signed stream URL for audio file from Supabase
+   * Get CloudFront stream URL for audio file from AWS S3
    * Must be called before rendering audio tag
    */
   const getAudioStreamUrl = useCallback(

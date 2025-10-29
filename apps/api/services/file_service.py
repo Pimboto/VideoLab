@@ -1,36 +1,40 @@
 """
-File service for file management operations with Supabase Storage and DB
-"""
-import csv
-import io
-import logging
-import os
-import subprocess
-import tempfile
-from typing import List, Optional
-from pathlib import Path
+File service for core file management operations with AWS S3 Storage and DB
 
-from fastapi import UploadFile
+This service handles:
+- File listing (videos, audios)
+- File deletion (single and bulk)
+- File renaming
+- File moving (bulk)
+- Output file listing
+
+Upload operations have been moved to specialized services:
+- MediaUploadService: video and audio uploads
+- CSVService: CSV uploads and parsing
+- FolderService: folder management
+"""
+import json
+import logging
+from datetime import datetime
+from typing import List, Optional
+
+from fastapi import HTTPException
 from supabase import Client
 
 from core.config import Settings
 from core.exceptions import (
-    FileSizeLimitError,
-    InvalidFileTypeError,
     FileNotFoundError,
     StorageError
 )
-from models.file import FileCreate, File
+from models.file import FileCreate
 from schemas.file_schemas import (
+    FileBulkDeleteResponse,
+    FileBulkMoveResponse,
     FileDeleteResponse,
     FileInfo,
     FileListResponse,
-    FileMoveResponse,
-    FileUploadResponse,
-    FolderCreateResponse,
-    FolderListResponse,
+    FileRenameResponse,
 )
-from schemas.processing_schemas import TextCombinationsResponse
 from services.storage_service import StorageService
 from utils.supabase_client import get_supabase_client
 
@@ -38,103 +42,12 @@ logger = logging.getLogger(__name__)
 
 
 class FileService:
-    """Service for file management operations with Supabase"""
+    """Service for core file management operations with AWS S3"""
 
     def __init__(self, settings: Settings, storage_service: StorageService):
         self.settings = settings
         self.storage = storage_service
         self.supabase: Client = get_supabase_client()
-
-    async def _generate_video_thumbnail(
-        self,
-        video_content: bytes,
-        output_path: str
-    ) -> bool:
-        """
-        Generate ultra-optimized thumbnail from video using ffmpeg.
-
-        Creates a 100x56 WebP thumbnail at 1 second mark with aggressive compression.
-        If WebP fails, falls back to JPEG.
-        Optimized for instant loading and minimal bandwidth.
-
-        Args:
-            video_content: Video file content in bytes
-            output_path: Path to save thumbnail (will use .webp or .jpg)
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            # Create temp file for video
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_video:
-                temp_video.write(video_content)
-                temp_video_path = temp_video.name
-
-            try:
-                # Try WebP first (much better compression than JPEG)
-                webp_path = output_path.replace('.jpg', '.webp')
-
-                # Generate thumbnail using ffmpeg with WebP
-                # -ss 1: seek to 1 second
-                # -i: input file
-                # -vframes 1: extract 1 frame
-                # -vf scale=100:56: scale to 100x56 (16:9, ultra tiny for instant load)
-                # -c:v libwebp: use WebP codec
-                # -quality 60: WebP quality (0-100, 60 is good balance)
-                # -compression_level 6: WebP compression (0-6, 6 is max compression)
-                result = subprocess.run(
-                    [
-                        'ffmpeg',
-                        '-y',  # Overwrite output
-                        '-ss', '1',  # Seek to 1 second
-                        '-i', temp_video_path,  # Input
-                        '-vframes', '1',  # Extract 1 frame
-                        '-vf', 'scale=100:56',  # Scale to 100x56 (ultra tiny)
-                        '-c:v', 'libwebp',  # WebP codec
-                        '-quality', '60',  # WebP quality
-                        '-compression_level', '6',  # Max compression
-                        webp_path
-                    ],
-                    capture_output=True,
-                    timeout=10  # 10 second timeout
-                )
-
-                # If WebP succeeded, use it
-                if result.returncode == 0 and os.path.exists(webp_path):
-                    # Rename to original output path if needed
-                    if webp_path != output_path:
-                        if os.path.exists(output_path):
-                            os.unlink(output_path)
-                        os.rename(webp_path, output_path)
-                    return True
-
-                # Fallback to JPEG if WebP failed
-                logger.warning("WebP thumbnail generation failed, falling back to JPEG")
-                result = subprocess.run(
-                    [
-                        'ffmpeg',
-                        '-y',  # Overwrite output
-                        '-ss', '1',  # Seek to 1 second
-                        '-i', temp_video_path,  # Input
-                        '-vframes', '1',  # Extract 1 frame
-                        '-vf', 'scale=100:56',  # Scale to 100x56
-                        '-q:v', '10',  # JPEG quality (aggressive compression)
-                        output_path
-                    ],
-                    capture_output=True,
-                    timeout=10
-                )
-
-                return result.returncode == 0 and os.path.exists(output_path)
-
-            finally:
-                # Clean up temp video file
-                if os.path.exists(temp_video_path):
-                    os.unlink(temp_video_path)
-
-        except Exception as e:
-            logger.error(f"Error generating video thumbnail: {str(e)}", exc_info=True)
-            return False
 
     async def _sync_folder_metadata(
         self,
@@ -142,7 +55,7 @@ class FileService:
         category: str,
         subfolder: str,
         file_size_delta: int,
-        file_count_delta: int | None = None
+        file_count_delta: Optional[int] = None
     ) -> None:
         """
         Atomically update folder metadata (file_count and total_size).
@@ -178,7 +91,10 @@ class FileService:
         except Exception as e:
             # Log but don't fail the operation - folder metadata is cached
             # If folder doesn't exist, the function handles it gracefully
-            logger.warning(f"Failed to sync folder metadata: {str(e)}", extra={"user_id": user_id, "category": category, "subfolder": subfolder})
+            logger.warning(
+                f"Failed to sync folder metadata: {str(e)}",
+                extra={"user_id": user_id, "category": category, "subfolder": subfolder}
+            )
 
     async def _create_file_metadata(
         self,
@@ -226,273 +142,58 @@ class FileService:
         except Exception as e:
             raise StorageError(f"Failed to save file metadata: {str(e)}")
 
-    async def upload_video(
+    async def list_files(
         self,
         user_id: str,
-        file: UploadFile,
+        file_type: str,
         subfolder: Optional[str] = None
-    ) -> FileUploadResponse:
-        """Upload a video file to Supabase Storage"""
-        # Validate extension
-        if not self.storage.validate_file_extension(file.filename, "video"):
-            allowed = ", ".join(self.settings.video_extensions)
-            raise InvalidFileTypeError(
-                f"Invalid video format. Allowed: {allowed}",
-                details={"allowed_extensions": list(self.settings.video_extensions)},
-            )
+    ) -> FileListResponse:
+        """
+        List all files for a user by file type.
 
-        # Get file size (file.file is the SpooledTemporaryFile)
-        file.file.seek(0, 2)
-        file_size = file.file.tell()
-        file.file.seek(0)
+        Unified method that works for videos, audios, and CSVs.
 
-        # Validate size
-        if not self.storage.validate_file_size(file_size, "video"):
-            max_mb = self.settings.max_video_size / (1024 * 1024)
-            raise FileSizeLimitError(
-                f"File too large. Maximum size: {max_mb:.0f}MB",
-                details={"max_size": self.settings.max_video_size},
-            )
+        Args:
+            user_id: User ID
+            file_type: File type (video, audio, csv)
+            subfolder: Optional subfolder filter
 
-        # Generate unique filename
-        unique_filename = self.storage.generate_unique_filename(file.filename)
-
-        # Read video content for thumbnail generation
-        await file.seek(0)
-        video_content = await file.read()
-
-        # Upload video to Supabase Storage
-        await file.seek(0)  # Reset for upload
-        storage_path, saved_size = await self.storage.upload_file(
-            user_id=user_id,
-            category="videos",
-            upload_file=file,
-            subfolder=subfolder,
-            unique_filename=unique_filename
-        )
-
-        # Generate and upload thumbnail
-        thumbnail_url = None
+        Returns:
+            FileListResponse with list of files
+        """
         try:
-            # Generate thumbnail
-            thumb_filename = f"{Path(unique_filename).stem}_thumb.jpg"
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as thumb_file:
-                thumb_path = thumb_file.name
+            query = self.supabase.table("files") \
+                .select("*") \
+                .eq("user_id", user_id) \
+                .eq("file_type", file_type)
 
-            if await self._generate_video_thumbnail(video_content, thumb_path):
-                # Upload thumbnail to Supabase (same bucket, thumbnails folder)
-                with open(thumb_path, 'rb') as thumb_f:
-                    thumb_content = thumb_f.read()
-                    thumb_storage_path = f"{user_id}/thumbnails/{thumb_filename}"
+            if subfolder:
+                query = query.eq("subfolder", subfolder)
 
-                    # Upload to videos bucket
-                    self.supabase.storage.from_("videos").upload(
-                        thumb_storage_path,
-                        thumb_content,
-                        {"content-type": "image/jpeg"}
-                    )
+            result = query.order("created_at", desc=True).execute()
 
-                    # Get public URL
-                    thumb_url_response = self.supabase.storage.from_("videos").create_signed_url(
-                        path=thumb_storage_path,
-                        expires_in=31536000  # 1 year
-                    )
-                    if thumb_url_response and "signedURL" in thumb_url_response:
-                        thumbnail_url = thumb_url_response["signedURL"]
+            files = []
+            for file_data in result.data:
+                # Parse metadata if it's a JSON string
+                metadata = file_data.get("metadata")
+                if metadata and isinstance(metadata, str):
+                    try:
+                        metadata = json.loads(metadata)
+                    except:
+                        metadata = None
 
-            # Clean up temp file
-            if os.path.exists(thumb_path):
-                os.unlink(thumb_path)
+                files.append(FileInfo(
+                    filename=file_data["filename"],
+                    filepath=file_data["filepath"],
+                    size=file_data["size_bytes"],
+                    modified=file_data["created_at"],
+                    file_type=file_type,
+                    metadata=metadata
+                ))
 
+            return FileListResponse(files=files, count=len(files))
         except Exception as e:
-            logger.warning(f"Failed to generate/upload thumbnail: {str(e)}", extra={"user_id": user_id, "filename": unique_filename})
-            # Continue without thumbnail - not critical
-
-        # Prepare additional metadata
-        additional_meta = {}
-        if thumbnail_url:
-            additional_meta["thumbnail_url"] = thumbnail_url
-
-        # Create metadata record with thumbnail URL
-        await self._create_file_metadata(
-            user_id=user_id,
-            filename=unique_filename,
-            filepath=storage_path,
-            file_type="video",
-            size_bytes=saved_size,
-            mime_type=file.content_type,
-            subfolder=subfolder,
-            original_filename=file.filename,
-            additional_metadata=additional_meta if additional_meta else None
-        )
-
-        # Sync folder metadata (increment count and size)
-        if subfolder:
-            await self._sync_folder_metadata(
-                user_id=user_id,
-                category="video",
-                subfolder=subfolder,
-                file_size_delta=saved_size
-            )
-
-        return FileUploadResponse(
-            filename=unique_filename,
-            filepath=storage_path,
-            size=saved_size,
-            message=f"Video uploaded successfully",
-        )
-
-    async def upload_audio(
-        self,
-        user_id: str,
-        file: UploadFile,
-        subfolder: Optional[str] = None
-    ) -> FileUploadResponse:
-        """Upload an audio file to Supabase Storage"""
-        # Validate extension
-        if not self.storage.validate_file_extension(file.filename, "audio"):
-            allowed = ", ".join(self.settings.audio_extensions)
-            raise InvalidFileTypeError(
-                f"Invalid audio format. Allowed: {allowed}",
-                details={"allowed_extensions": list(self.settings.audio_extensions)},
-            )
-
-        # Get file size (file.file is the SpooledTemporaryFile)
-        file.file.seek(0, 2)
-        file_size = file.file.tell()
-        file.file.seek(0)
-
-        # Validate size
-        if not self.storage.validate_file_size(file_size, "audio"):
-            max_mb = self.settings.max_audio_size / (1024 * 1024)
-            raise FileSizeLimitError(
-                f"File too large. Maximum size: {max_mb:.0f}MB",
-                details={"max_size": self.settings.max_audio_size},
-            )
-
-        # Generate unique filename
-        unique_filename = self.storage.generate_unique_filename(file.filename)
-
-        # Upload to Supabase Storage
-        storage_path, saved_size = await self.storage.upload_file(
-            user_id=user_id,
-            category="audios",
-            upload_file=file,
-            subfolder=subfolder,
-            unique_filename=unique_filename
-        )
-
-        # Create metadata record
-        await self._create_file_metadata(
-            user_id=user_id,
-            filename=unique_filename,
-            filepath=storage_path,
-            file_type="audio",
-            size_bytes=saved_size,
-            mime_type=file.content_type,
-            subfolder=subfolder,
-            original_filename=file.filename
-        )
-
-        # Sync folder metadata (increment count and size)
-        if subfolder:
-            await self._sync_folder_metadata(
-                user_id=user_id,
-                category="audio",
-                subfolder=subfolder,
-                file_size_delta=saved_size
-            )
-
-        return FileUploadResponse(
-            filename=unique_filename,
-            filepath=storage_path,
-            size=saved_size,
-            message=f"Audio uploaded successfully",
-        )
-
-    async def upload_csv(
-        self,
-        user_id: str,
-        file: UploadFile,
-        save_file: bool = True
-    ) -> TextCombinationsResponse:
-        """Upload and parse a CSV file"""
-        # Validate extension
-        if not self.storage.validate_file_extension(file.filename, "csv"):
-            raise InvalidFileTypeError(
-                "Invalid file format. Only CSV files are allowed",
-                details={"allowed_extensions": list(self.settings.csv_extensions)},
-            )
-
-        # Get file size (file.file is the SpooledTemporaryFile)
-        file.file.seek(0, 2)
-        file_size = file.file.tell()
-        file.file.seek(0)
-
-        # Validate size
-        if not self.storage.validate_file_size(file_size, "csv"):
-            max_mb = self.settings.max_csv_size / (1024 * 1024)
-            raise FileSizeLimitError(
-                f"File too large. Maximum size: {max_mb:.0f}MB",
-                details={"max_size": self.settings.max_csv_size},
-            )
-
-        # Read and parse CSV
-        content = await file.read()
-        text_content = content.decode("utf-8-sig")
-        reader = csv.reader(io.StringIO(text_content))
-
-        combinations = []
-        for row in reader:
-            if not row:
-                continue
-            segs = [c.strip() for c in row if c and c.strip()]
-            if segs:
-                combinations.append(segs)
-
-        # Save file if requested
-        saved_filepath = None
-        filename = file.filename
-
-        if save_file:
-            # Generate unique filename
-            unique_filename = self.storage.generate_unique_filename(file.filename)
-
-            # Create new file-like object from content (file was already read)
-            file.file = io.BytesIO(content)
-            file.file.seek(0)
-
-            # Upload to Supabase Storage
-            storage_path, saved_size = await self.storage.upload_file(
-                user_id=user_id,
-                category="csv",
-                upload_file=file,
-                subfolder=None,
-                unique_filename=unique_filename
-            )
-            
-            # Create metadata record
-            await self._create_file_metadata(
-                user_id=user_id,
-                filename=unique_filename,
-                filepath=storage_path,
-                file_type="csv",
-                size_bytes=saved_size,
-                mime_type=file.content_type,
-                subfolder=None,
-                original_filename=file.filename
-            )
-            
-            saved_filepath = storage_path
-            filename = unique_filename
-
-        return TextCombinationsResponse(
-            combinations=combinations,
-            count=len(combinations),
-            saved=save_file,
-            filepath=saved_filepath,
-            filename=filename,
-        )
+            raise StorageError(f"Failed to list {file_type} files: {str(e)}")
 
     async def list_videos(
         self,
@@ -500,40 +201,7 @@ class FileService:
         subfolder: Optional[str] = None
     ) -> FileListResponse:
         """List all video files for a user from database"""
-        try:
-            query = self.supabase.table("files") \
-                .select("*") \
-                .eq("user_id", user_id) \
-                .eq("file_type", "video")
-            
-            if subfolder:
-                query = query.eq("subfolder", subfolder)
-            
-            result = query.order("created_at", desc=True).execute()
-            
-            files = []
-            for file_data in result.data:
-                # Parse metadata if it's a JSON string
-                metadata = file_data.get("metadata")
-                if metadata and isinstance(metadata, str):
-                    import json
-                    try:
-                        metadata = json.loads(metadata)
-                    except:
-                        metadata = None
-
-                files.append(FileInfo(
-                    filename=file_data["filename"],
-                    filepath=file_data["filepath"],
-                    size=file_data["size_bytes"],
-                    modified=file_data["created_at"],
-                    file_type="video",
-                    metadata=metadata
-                ))
-
-            return FileListResponse(files=files, count=len(files))
-        except Exception as e:
-            raise StorageError(f"Failed to list videos: {str(e)}")
+        return await self.list_files(user_id, "video", subfolder)
 
     async def list_audios(
         self,
@@ -541,77 +209,7 @@ class FileService:
         subfolder: Optional[str] = None
     ) -> FileListResponse:
         """List all audio files for a user from database"""
-        try:
-            query = self.supabase.table("files") \
-                .select("*") \
-                .eq("user_id", user_id) \
-                .eq("file_type", "audio")
-            
-            if subfolder:
-                query = query.eq("subfolder", subfolder)
-            
-            result = query.order("created_at", desc=True).execute()
-            
-            files = []
-            for file_data in result.data:
-                # Parse metadata if it's a JSON string
-                metadata = file_data.get("metadata")
-                if metadata and isinstance(metadata, str):
-                    import json
-                    try:
-                        metadata = json.loads(metadata)
-                    except:
-                        metadata = None
-
-                files.append(FileInfo(
-                    filename=file_data["filename"],
-                    filepath=file_data["filepath"],
-                    size=file_data["size_bytes"],
-                    modified=file_data["created_at"],
-                    file_type="audio",
-                    metadata=metadata
-                ))
-
-            return FileListResponse(files=files, count=len(files))
-        except Exception as e:
-            raise StorageError(f"Failed to list audios: {str(e)}")
-
-    async def list_csvs(
-        self,
-        user_id: str
-    ) -> FileListResponse:
-        """List all CSV files for a user from database"""
-        try:
-            result = self.supabase.table("files") \
-                .select("*") \
-                .eq("user_id", user_id) \
-                .eq("file_type", "csv") \
-                .order("created_at", desc=True) \
-                .execute()
-            
-            files = []
-            for file_data in result.data:
-                # Parse metadata if it's a JSON string
-                metadata = file_data.get("metadata")
-                if metadata and isinstance(metadata, str):
-                    import json
-                    try:
-                        metadata = json.loads(metadata)
-                    except:
-                        metadata = None
-
-                files.append(FileInfo(
-                    filename=file_data["filename"],
-                    filepath=file_data["filepath"],
-                    size=file_data["size_bytes"],
-                    modified=file_data["created_at"],
-                    file_type="csv",
-                    metadata=metadata
-                ))
-
-            return FileListResponse(files=files, count=len(files))
-        except Exception as e:
-            raise StorageError(f"Failed to list CSVs: {str(e)}")
+        return await self.list_files(user_id, "audio", subfolder)
 
     async def delete_file(
         self,
@@ -631,15 +229,28 @@ class FileService:
                 raise FileNotFoundError(f"File not found or access denied")
 
             file_data = result.data[0]
+            subfolder = file_data.get("subfolder")
+            file_size = file_data.get("size_bytes", 0)
+            file_type = file_data.get("file_type", "")
 
             # Delete from storage
             await self.storage.delete_file(
-                category=file_data["file_type"] + "s",  # video -> videos
+                category=file_type + "s",  # video -> videos
                 storage_path=file_data["filepath"]
             )
 
             # Delete metadata from database
             self.supabase.table("files").delete().eq("id", file_id).execute()
+
+            # Update folder stats (decrement count and size)
+            if subfolder:
+                await self._sync_folder_metadata(
+                    user_id=user_id,
+                    category=file_type,
+                    subfolder=subfolder,
+                    file_size_delta=-file_size,
+                    file_count_delta=-1
+                )
 
             return FileDeleteResponse(
                 message="File deleted successfully",
@@ -720,8 +331,6 @@ class FileService:
         - Update folder metadata once per folder (not per file)
         - Return detailed results for UI feedback
         """
-        from schemas.file_schemas import FileBulkDeleteResponse
-
         deleted_count = 0
         failed_count = 0
         failed_files = []
@@ -788,7 +397,11 @@ class FileService:
                     deleted_count += 1
 
                 except Exception as e:
-                    logger.error(f"Error deleting file: {str(e)}", extra={"filepath": filepath}, exc_info=True)
+                    logger.error(
+                        f"Error deleting file: {str(e)}",
+                        extra={"filepath": filepath},
+                        exc_info=True
+                    )
                     failed_count += 1
                     failed_files.append(filepath)
 
@@ -803,7 +416,10 @@ class FileService:
                         file_count_delta=folder_update["count_delta"]
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to sync folder metadata after bulk delete: {str(e)}", extra=folder_update)
+                    logger.warning(
+                        f"Failed to sync folder metadata after bulk delete: {str(e)}",
+                        extra=folder_update
+                    )
 
             # Build response message
             if deleted_count == len(filepaths):
@@ -836,168 +452,23 @@ class FileService:
                 .eq("id", file_id) \
                 .eq("user_id", user_id) \
                 .execute()
-            
+
             if not result.data or len(result.data) == 0:
                 raise FileNotFoundError(f"File not found or access denied")
-            
+
             file_data = result.data[0]
-            
+
             # Get signed URL
             url = self.storage.get_public_url(
                 category=file_data["file_type"] + "s",
                 storage_path=file_data["filepath"]
             )
-            
+
             return url
         except FileNotFoundError:
             raise
         except Exception as e:
             raise StorageError(f"Failed to get download URL: {str(e)}")
-
-    async def list_folders(
-        self,
-        user_id: str,
-        category: str
-    ) -> FolderListResponse:
-        """
-        List all folders for a user in a category.
-
-        Queries the dedicated folders table with pre-calculated metadata.
-        """
-        try:
-            # Query folders table directly (fast, single query)
-            result = self.supabase.table("folders") \
-                .select("*") \
-                .eq("user_id", user_id) \
-                .eq("category", category.rstrip("s")) \
-                .order("created_at", desc=False) \
-                .execute()
-
-            if not result.data:
-                return FolderListResponse(folders=[], count=0)
-
-            # Map to response schema
-            from schemas.file_schemas import FolderInfo
-            folders = [
-                FolderInfo(
-                    name=row["folder_name"],
-                    path=row["folder_path"],
-                    file_count=row["file_count"],
-                    total_size=row["total_size"]
-                )
-                for row in result.data
-            ]
-
-            return FolderListResponse(folders=folders, count=len(folders))
-
-        except Exception as e:
-            raise StorageError(f"Failed to list folders: {str(e)}")
-
-    async def create_folder(
-        self,
-        user_id: str,
-        category: str,
-        folder_name: str
-    ) -> FolderCreateResponse:
-        """
-        Create a new folder.
-
-        Inserts into folders table. The actual Supabase Storage folder
-        is created implicitly when first file is uploaded.
-        """
-        try:
-            # Validate and build folder path
-            folder_path = await self.storage.create_folder(
-                category=category,
-                user_id=user_id,
-                folder_name=folder_name
-            )
-
-            # Insert into folders table
-            from models.folder import FolderCreate
-            folder_data = FolderCreate(
-                user_id=user_id,
-                category=category.rstrip("s"),  # "videos" → "video"
-                folder_name=folder_name,
-                folder_path=folder_path
-            )
-
-            result = self.supabase.table("folders").insert(folder_data.model_dump()).execute()
-
-            if not result.data or len(result.data) == 0:
-                raise StorageError("Failed to create folder in database")
-
-            return FolderCreateResponse(
-                message="Folder created successfully",
-                folder_name=folder_name,
-                folder_path=folder_path,
-            )
-
-        except Exception as e:
-            raise StorageError(f"Failed to create folder: {str(e)}")
-
-    async def delete_folder(
-        self,
-        user_id: str,
-        category: str,
-        folder_name: str
-    ) -> tuple[str, int]:
-        """
-        Delete a folder and all its files.
-
-        Args:
-            user_id: User ID
-            category: Category (videos, audios)
-            folder_name: Folder name
-
-        Returns:
-            Tuple of (message, files_deleted_count)
-        """
-        try:
-            # Get all files in the folder
-            result = self.supabase.table("files") \
-                .select("*") \
-                .eq("user_id", user_id) \
-                .eq("file_type", category.rstrip("s")) \
-                .eq("subfolder", folder_name) \
-                .execute()
-
-            files_to_delete = result.data or []
-            files_deleted = 0
-
-            # Delete each file (from storage and database)
-            for file_data in files_to_delete:
-                try:
-                    # Delete from Supabase Storage
-                    await self.storage.delete_file(
-                        category=category,
-                        storage_path=file_data["filepath"]
-                    )
-
-                    # Delete from database
-                    self.supabase.table("files").delete().eq("id", file_data["id"]).execute()
-                    files_deleted += 1
-
-                except Exception as e:
-                    logger.warning(f"Failed to delete file from folder: {str(e)}", extra={"filepath": file_data['filepath']})
-                    continue
-
-            # Delete folder from folders table
-            self.supabase.table("folders").delete() \
-                .eq("user_id", user_id) \
-                .eq("category", category.rstrip("s")) \
-                .eq("folder_name", folder_name) \
-                .execute()
-
-            from schemas.file_schemas import FolderDeleteResponse
-            return FolderDeleteResponse(
-                message=f"Folder '{folder_name}' deleted successfully",
-                folder_name=folder_name,
-                files_deleted=files_deleted
-            )
-
-        except Exception as e:
-            raise StorageError(f"Failed to delete folder: {str(e)}")
 
     async def rename_file(
         self,
@@ -1006,20 +477,24 @@ class FileService:
         new_display_name: str
     ):
         """
-        Rename file (display name only - doesn't move physical file).
+        Rename file (REAL rename in S3 + database update).
 
-        Updates the original_filename in metadata for display purposes.
+        NEW: Actually renames the file in S3 (copy + delete), not just metadata.
+        Handles duplicate names by adding (1), (2), etc.
 
         Args:
             user_id: User ID
-            filepath: File path
-            new_display_name: New display name (can include extension)
+            filepath: Current file path (full S3 path)
+            new_display_name: New filename (can include extension)
 
         Returns:
-            FileRenameResponse
-        """
-        from schemas.file_schemas import FileRenameResponse
+            FileRenameResponse with new filepath
 
+        Examples:
+            If renaming "video.mp4" to "my_video.mp4":
+            - S3: copies users/.../video.mp4 -> users/.../my_video.mp4, deletes old
+            - DB: updates filename and filepath columns
+        """
         try:
             # Get file from database
             result = self.supabase.table("files") \
@@ -1034,28 +509,64 @@ class FileService:
 
             file_data = result.data
 
-            # Update metadata with new display name
-            current_metadata = file_data.get("metadata") or {}
-            if isinstance(current_metadata, str):
-                import json
-                current_metadata = json.loads(current_metadata)
+            # Extract category and subfolder from current filepath
+            # Format: users/{user_id}/{category}/{subfolder?}/{filename}
+            parts = filepath.split("/")
+            if len(parts) < 4:
+                raise StorageError("Invalid filepath format")
 
-            current_metadata["original_filename"] = new_display_name
+            category = parts[2]  # "videos", "audios", "csv"
+            # Determine if there's a subfolder
+            if len(parts) == 5:
+                subfolder = parts[3]
+            elif len(parts) > 5:
+                # Handle nested subfolders
+                subfolder = "/".join(parts[3:-1])
+            else:
+                subfolder = None
 
-            # Update in database
+            # Rename file in S3 (REAL rename with copy + delete)
+            # Note: storage service expects plural categories (videos, audios, csv, output)
+            new_filepath = await self.storage.rename_file_s3(
+                user_id=user_id,
+                category=category,  # Keep plural: "videos", "audios", "csv"
+                old_filepath=filepath,
+                new_filename=new_display_name,
+                subfolder=subfolder,
+                is_library=False
+            )
+
+            # Extract new filename from new_filepath
+            new_filename = new_filepath.split("/")[-1]
+
+            # Update database with NEW filename and filepath
             self.supabase.table("files") \
-                .update({"metadata": current_metadata}) \
+                .update({
+                    "filename": new_filename,
+                    "filepath": new_filepath,
+                    "updated_at": "now()"
+                }) \
                 .eq("filepath", filepath) \
                 .eq("user_id", user_id) \
                 .execute()
 
+            logger.info(
+                f"File renamed successfully: {filepath} → {new_filepath}",
+                extra={
+                    "user_id": user_id,
+                    "old": filepath.split("/")[-1],
+                    "new": new_filename
+                }
+            )
+
             return FileRenameResponse(
                 message="File renamed successfully",
-                filepath=filepath,
-                new_display_name=new_display_name
+                filepath=new_filepath,
+                new_display_name=new_filename
             )
 
         except Exception as e:
+            logger.error(f"Failed to rename file: {str(e)}", exc_info=True)
             raise StorageError(f"Failed to rename file: {str(e)}")
 
     async def bulk_move_files(
@@ -1078,8 +589,6 @@ class FileService:
         Returns:
             FileBulkMoveResponse with success/failure counts
         """
-        from schemas.file_schemas import FileBulkMoveResponse
-
         moved_count = 0
         failed_count = 0
         failed_files = []
@@ -1106,16 +615,17 @@ class FileService:
                     file_data = result.data
                     file_type = file_data["file_type"]
                     current_subfolder = file_data.get("subfolder", "")
-                    file_size = file_data["size"]
+                    file_size = file_data["size_bytes"]
 
                     # Determine category from file_type
                     category = f"{file_type}s"  # video -> videos, audio -> audios
+                    category_folder = category  # videos, audios, etc.
 
-                    # Build new storage path
+                    # Build new storage path with correct prefix
                     filename = filepath.split("/")[-1]
-                    new_filepath = f"{user_id}/{destination_folder}/{filename}"
+                    new_filepath = f"users/{user_id}/{category_folder}/{destination_folder}/{filename}"
 
-                    # Move file in Supabase Storage
+                    # Move file in AWS S3
                     await self.storage.move_file(
                         category=category,
                         source_path=filepath,
@@ -1135,11 +645,11 @@ class FileService:
                     # Track folder updates for batch metadata sync
                     # Source folder (decrease)
                     if current_subfolder:
-                        source_key = f"{user_id}_{category}_{current_subfolder}"
+                        source_key = f"{user_id}_{file_type}_{current_subfolder}"
                         if source_key not in folder_updates:
                             folder_updates[source_key] = {
                                 "user_id": user_id,
-                                "category": category,
+                                "category": file_type,  # Use singular: "video", "audio"
                                 "subfolder": current_subfolder,
                                 "size_delta": 0,
                                 "count_delta": 0
@@ -1148,11 +658,11 @@ class FileService:
                         folder_updates[source_key]["count_delta"] -= 1
 
                     # Destination folder (increase)
-                    dest_key = f"{user_id}_{category}_{destination_folder}"
+                    dest_key = f"{user_id}_{file_type}_{destination_folder}"
                     if dest_key not in folder_updates:
                         folder_updates[dest_key] = {
                             "user_id": user_id,
-                            "category": category,
+                            "category": file_type,  # Use singular: "video", "audio"
                             "subfolder": destination_folder,
                             "size_delta": 0,
                             "count_delta": 0
@@ -1163,7 +673,11 @@ class FileService:
                     moved_count += 1
 
                 except Exception as e:
-                    logger.error(f"Error moving file: {str(e)}", extra={"filepath": filepath}, exc_info=True)
+                    logger.error(
+                        f"Error moving file: {str(e)}",
+                        extra={"filepath": filepath},
+                        exc_info=True
+                    )
                     failed_count += 1
                     failed_files.append(filepath)
 
@@ -1178,7 +692,10 @@ class FileService:
                         file_count_delta=folder_update["count_delta"]
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to sync folder metadata after bulk move: {str(e)}", extra=folder_update)
+                    logger.warning(
+                        f"Failed to sync folder metadata after bulk move: {str(e)}",
+                        extra=folder_update
+                    )
 
             # Build response message
             if moved_count == len(filepaths):
@@ -1201,44 +718,68 @@ class FileService:
 
     def list_output_files(self, user_id: str) -> FileListResponse:
         """
-        List all processed/output video files.
+        List all processed/output video files from AWS S3.
 
-        Note: Output files are stored locally (not in Supabase) for now.
-        This is legacy behavior that should eventually migrate to Supabase Storage.
+        Note: Output files are stored in S3 with tag purpose=temporary
+        and automatically deleted after 24h by S3 lifecycle rule.
 
         Args:
-            user_id: User ID (for future user-specific filtering)
+            user_id: User ID to filter outputs
 
         Returns:
-            FileListResponse with output files
+            FileListResponse with output files from S3
         """
-        import os
-        from datetime import datetime
+        try:
+            # List all files in user's output folder on S3
+            prefix = f"users/{user_id}/output/"
+            s3_files = self.storage.s3_client.list_files(prefix=prefix)
 
-        output_dir = self.settings.output_storage_path
-        files_list = []
+            files_list = []
+            for s3_file in s3_files:
+                # Extract filename from S3 key
+                # Format: users/{user_id}/output/{job_id}/{filename}.mp4
+                key = s3_file['Key']
+                filename = key.split('/')[-1]
 
-        if output_dir.exists():
-            for root, dirs, files in os.walk(output_dir):
-                for file in files:
-                    if file.endswith(('.mp4', '.mov', '.avi', '.mkv')):
-                        filepath = Path(root) / file
-                        stat = filepath.stat()
+                # Extract job_id (folder name in S3)
+                key_parts = key.split('/')
+                job_id = key_parts[3] if len(key_parts) > 3 else ""
 
-                        # Get the folder name relative to output dir
-                        relative_path = filepath.relative_to(output_dir)
-                        folder_name = str(relative_path.parent) if relative_path.parent != Path('.') else ""
+                # Get file metadata from S3
+                size_bytes = s3_file.get('Size', 0)
+                last_modified = s3_file.get('LastModified')
 
-                        files_list.append({
-                            "filename": file,
-                            "filepath": str(filepath),
-                            "size": stat.st_size,
-                            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                            "file_type": "video",
-                            "folder": folder_name
-                        })
+                # Convert datetime to ISO string
+                if last_modified:
+                    if isinstance(last_modified, datetime):
+                        modified_str = last_modified.isoformat()
+                    else:
+                        modified_str = last_modified
+                else:
+                    modified_str = datetime.now().isoformat()
 
-        # Sort by modified date, newest first
-        files_list.sort(key=lambda x: x["modified"], reverse=True)
+                files_list.append({
+                    "filename": filename,
+                    "filepath": key,  # Full S3 key
+                    "size": size_bytes,
+                    "size_bytes": size_bytes,  # For compatibility
+                    "modified": modified_str,
+                    "file_type": "output",
+                    "folder": job_id,  # Job ID as folder
+                    "metadata": {
+                        "storage_type": "s3",
+                        "temporary": True,
+                        "expires_in": "24 hours",
+                    }
+                })
 
-        return FileListResponse(files=files_list, count=len(files_list))
+            # Sort by modified date, newest first
+            files_list.sort(key=lambda x: x["modified"], reverse=True)
+
+            logger.info(f"Listed {len(files_list)} output files for user {user_id} from S3")
+            return FileListResponse(files=files_list, count=len(files_list))
+
+        except Exception as e:
+            logger.error(f"Error listing output files from S3: {str(e)}", exc_info=True)
+            # Return empty list on error instead of failing
+            return FileListResponse(files=[], count=0)

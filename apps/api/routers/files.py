@@ -8,7 +8,12 @@ from fastapi.responses import StreamingResponse, FileResponse
 from pathlib import Path
 import os
 
-from core.dependencies import get_file_service, get_current_user
+from core.dependencies import (
+    get_file_service,
+    get_current_user,
+    get_media_upload_service,
+    get_csv_service,
+)
 from core.exceptions import StorageError
 from schemas.file_schemas import (
     FileDeleteRequest,
@@ -26,6 +31,8 @@ from schemas.file_schemas import (
 )
 from schemas.processing_schemas import TextCombinationsResponse
 from services.file_service import FileService
+from services.media_upload_service import MediaUploadService
+from services.csv_service import CSVService
 
 router = APIRouter(prefix="/files", tags=["files"])
 logger = logging.getLogger(__name__)
@@ -36,7 +43,7 @@ async def upload_video(
     file: UploadFile = File(...),
     subfolder: str | None = Form(default=None),
     current_user: dict = Depends(get_current_user),
-    file_service: FileService = Depends(get_file_service),
+    media_service: MediaUploadService = Depends(get_media_upload_service),
 ) -> FileUploadResponse:
     """
     Upload a video file.
@@ -47,7 +54,7 @@ async def upload_video(
     - **subfolder**: Optional subfolder for organization (sent as form data)
     """
     user_id = current_user["id"]
-    return await file_service.upload_video(user_id, file, subfolder)
+    return await media_service.upload_video(user_id, file, subfolder)
 
 
 @router.post("/upload/audio", response_model=FileUploadResponse, status_code=201)
@@ -55,7 +62,7 @@ async def upload_audio(
     file: UploadFile = File(...),
     subfolder: str | None = Form(default=None),
     current_user: dict = Depends(get_current_user),
-    file_service: FileService = Depends(get_file_service),
+    media_service: MediaUploadService = Depends(get_media_upload_service),
 ) -> FileUploadResponse:
     """
     Upload an audio file.
@@ -66,7 +73,7 @@ async def upload_audio(
     - **subfolder**: Optional subfolder for organization (sent as form data)
     """
     user_id = current_user["id"]
-    return await file_service.upload_audio(user_id, file, subfolder)
+    return await media_service.upload_audio(user_id, file, subfolder)
 
 
 @router.post("/upload/csv", response_model=TextCombinationsResponse, status_code=201)
@@ -74,7 +81,7 @@ async def upload_csv(
     file: UploadFile = File(...),
     save_file: bool = Query(default=True),
     current_user: dict = Depends(get_current_user),
-    file_service: FileService = Depends(get_file_service),
+    csv_service: CSVService = Depends(get_csv_service),
 ) -> TextCombinationsResponse:
     """
     Upload and parse a CSV file.
@@ -85,7 +92,7 @@ async def upload_csv(
     - **save_file**: Whether to save the file to storage
     """
     user_id = current_user["id"]
-    return await file_service.upload_csv(user_id, file, save_file)
+    return await csv_service.upload_csv(user_id, file, save_file)
 
 
 @router.get("/videos", response_model=FileListResponse)
@@ -125,15 +132,15 @@ async def list_audios(
 @router.get("/csv", response_model=FileListResponse)
 async def list_csvs(
     current_user: dict = Depends(get_current_user),
-    file_service: FileService = Depends(get_file_service),
+    csv_service: CSVService = Depends(get_csv_service),
 ) -> FileListResponse:
     """
     List all saved CSV files with detailed information.
-    
+
     Requires authentication.
     """
     user_id = current_user["id"]
-    return await file_service.list_csvs(user_id)
+    return await csv_service.list_csvs(user_id)
 
 
 @router.get("/outputs", response_model=FileListResponse)
@@ -256,9 +263,9 @@ async def get_video_stream_url(
     file_service: FileService = Depends(get_file_service),
 ):
     """
-    Get signed URL for streaming a video file from Supabase Storage.
+    Get CloudFront URL for streaming a video file from S3.
 
-    Requires authentication. Returns JSON with signed URL.
+    Requires authentication. Returns JSON with CloudFront URL.
 
     - **filepath**: Storage path to the video file
     """
@@ -276,17 +283,16 @@ async def get_video_stream_url(
     if not result.data:
         raise HTTPException(status_code=404, detail="Video file not found")
 
-    # Generate signed URL from Supabase Storage (valid for 1 hour)
+    # Generate CloudFront URL (valid for 1 hour)
     try:
-        signed_url_response = file_service.storage.supabase.storage.from_("videos").create_signed_url(
-            path=filepath,
-            expires_in=3600  # 1 hour
+        url = file_service.storage.get_public_url(
+            category="videos",
+            storage_path=filepath,
+            expires_in=3600,  # 1 hour
+            use_cloudfront=True
         )
 
-        if not signed_url_response or "signedURL" not in signed_url_response:
-            raise StorageError("Failed to generate signed URL for video")
-
-        return {"url": signed_url_response["signedURL"]}
+        return {"url": url}
 
     except Exception as e:
         logger.error(f"Error getting video stream URL: {str(e)}", exc_info=True, extra={"filepath": filepath, "user_id": user_id})
@@ -300,9 +306,9 @@ async def get_audio_stream_url(
     file_service: FileService = Depends(get_file_service),
 ):
     """
-    Get signed URL for streaming an audio file from Supabase Storage.
+    Get CloudFront URL for streaming an audio file from S3.
 
-    Requires authentication. Returns JSON with signed URL.
+    Requires authentication. Returns JSON with CloudFront URL.
 
     - **filepath**: Storage path to the audio file
     """
@@ -320,17 +326,16 @@ async def get_audio_stream_url(
     if not result.data:
         raise HTTPException(status_code=404, detail="Audio file not found")
 
-    # Generate signed URL from Supabase Storage (valid for 1 hour)
+    # Generate CloudFront URL (valid for 1 hour)
     try:
-        signed_url_response = file_service.storage.supabase.storage.from_("audios").create_signed_url(
-            path=filepath,
-            expires_in=3600  # 1 hour
+        url = file_service.storage.get_public_url(
+            category="audios",
+            storage_path=filepath,
+            expires_in=3600,  # 1 hour
+            use_cloudfront=True
         )
 
-        if not signed_url_response or "signedURL" not in signed_url_response:
-            raise StorageError("Failed to generate signed URL for audio")
-
-        return {"url": signed_url_response["signedURL"]}
+        return {"url": url}
 
     except Exception as e:
         logger.error(f"Error getting audio stream URL: {str(e)}", exc_info=True, extra={"filepath": filepath, "user_id": user_id})

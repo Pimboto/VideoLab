@@ -15,6 +15,9 @@ from services.processing_service import ProcessingService
 from services.storage_service import StorageService
 from services.user_service import UserService
 from services.video_render_service import VideoRenderService
+from services.media_upload_service import MediaUploadService
+from services.csv_service import CSVService
+from services.folder_service import FolderService
 from utils.supabase_client import get_supabase_client
 
 
@@ -52,7 +55,34 @@ def get_processing_service() -> ProcessingService:
     settings = get_settings()
     job_service = get_job_service()
     video_render_service = get_video_render_service()
-    return ProcessingService(settings, job_service, video_render_service)
+    storage_service = get_storage_service()
+    return ProcessingService(settings, job_service, video_render_service, storage_service)
+
+
+@lru_cache
+def get_media_upload_service() -> MediaUploadService:
+    """Get media upload service instance (videos and audios)"""
+    settings = get_settings()
+    storage_service = get_storage_service()
+    supabase = get_supabase_client()
+    return MediaUploadService(settings, storage_service, supabase)
+
+
+@lru_cache
+def get_csv_service() -> CSVService:
+    """Get CSV service instance"""
+    settings = get_settings()
+    storage_service = get_storage_service()
+    supabase = get_supabase_client()
+    return CSVService(settings, storage_service, supabase)
+
+
+@lru_cache
+def get_folder_service() -> FolderService:
+    """Get folder service instance"""
+    storage_service = get_storage_service()
+    supabase = get_supabase_client()
+    return FolderService(storage_service, supabase)
 
 
 # ========================================

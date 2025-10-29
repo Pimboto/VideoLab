@@ -52,6 +52,20 @@ class Settings(BaseSettings):
     supabase_anon_key: str = Field(..., alias="SUPABASE_ANON_KEY")
     supabase_service_role_key: str = Field(..., alias="SUPABASE_SERVICE_ROLE_KEY")
 
+    # AWS Configuration (S3 + CloudFront)
+    aws_access_key_id: str = Field(..., alias="AWS_ACCESS_KEY_ID")
+    aws_secret_access_key: str = Field(..., alias="AWS_SECRET_ACCESS_KEY")
+    aws_region: str = Field(default="us-east-2", alias="AWS_REGION")
+    aws_s3_bucket: str = Field(default="videoapp-storage-production", alias="AWS_S3_BUCKET")
+    aws_cloudfront_domain: str = Field(
+        default="d3ppku6zdpgtef.cloudfront.net",
+        alias="AWS_CLOUDFRONT_DOMAIN"
+    )
+    aws_cloudfront_key_pair_id: str | None = Field(
+        default=None,
+        alias="AWS_CLOUDFRONT_KEY_PAIR_ID"
+    )  # Optional: For CloudFront signed URLs
+
     # Storage Configuration
     # IMPORTANT: Set STORAGE_DIR environment variable to configure storage location
     # Example: STORAGE_DIR=/app/storage or STORAGE_DIR=D:/Work/video

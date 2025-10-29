@@ -6,6 +6,7 @@ import { Button } from "@heroui/button";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Select, SelectItem } from "@heroui/select";
 import { Input } from "@heroui/input";
+import { Pagination } from "@heroui/pagination";
 import type { Selection } from "@heroui/table";
 
 import FileTable from "@/components/Dashboard/FileTable";
@@ -13,6 +14,7 @@ import FolderSidebar from "@/components/Dashboard/FolderSidebar";
 import BulkActions from "@/components/Dashboard/BulkActions";
 import type { AudioFile, Folder } from "@/lib/types";
 import { useFiles, useFolders, useUpload, useToast } from "@/lib/hooks";
+import { useAudioStreamUrls } from "@/lib/hooks/useVideoStreamUrl";
 
 const AUDIO_COLUMNS = [
   { key: "name", label: "NAME" },
@@ -23,7 +25,7 @@ const AUDIO_COLUMNS = [
 
 export default function AudiosPage() {
   const { getToken } = useAuth();
-  const { listFiles, deleteFile, bulkDeleteFiles, bulkMoveFiles, renameFile, getAudioStreamUrl } = useFiles();
+  const { listFiles, deleteFile, bulkDeleteFiles, bulkMoveFiles, renameFile } = useFiles();
   const { listFolders, createFolder, deleteFolder } = useFolders();
   const { uploadFile, uploadMultipleFiles, uploadProgress, isUploading } = useUpload();
   const toast = useToast();
@@ -33,6 +35,10 @@ export default function AudiosPage() {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedAudios, setSelectedAudios] = useState<Selection>(new Set());
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
 
   const { isOpen: isUploadOpen, onOpen: onUploadOpen, onClose: onUploadClose } = useDisclosure();
   const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
@@ -44,6 +50,7 @@ export default function AudiosPage() {
   const [previewAudio, setPreviewAudio] = useState<AudioFile | null>(null);
   const [renameAudio, setRenameAudio] = useState<AudioFile | null>(null);
   const [newName, setNewName] = useState("");
+  const [fileExtension, setFileExtension] = useState("");
   const [moveToFolder, setMoveToFolder] = useState("");
 
   useEffect(() => {
@@ -65,6 +72,7 @@ export default function AudiosPage() {
 
   const loadAllAudios = async () => {
     setLoading(true);
+    setCurrentPage(1); // Reset to first page when changing folders
     const response = await listFiles("audios", selectedFolder);
     setLoading(false);
 
@@ -75,6 +83,16 @@ export default function AudiosPage() {
       toast.error("Failed to load audio files");
     }
   };
+
+  // Calculate pagination
+  const totalPages = Math.ceil(audios.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const visibleAudios = audios.slice(startIndex, endIndex);
+
+  // Load stream URLs ONLY for visible audios (huge performance improvement!)
+  const visibleFilepaths = visibleAudios.map(a => a.filepath);
+  const { urls: audioUrls, isLoading: urlsLoading } = useAudioStreamUrls(visibleFilepaths);
 
   const handleCreateFolder = async (folderName: string) => {
     const result = await createFolder("audios", folderName);
@@ -186,13 +204,17 @@ export default function AudiosPage() {
   const handleRename = async () => {
     if (!renameAudio || !newName.trim()) return;
 
-    const success = await renameFile(renameAudio.filepath, newName);
+    // Add extension back to the new name
+    const newNameWithExtension = newName + fileExtension;
+    const success = await renameFile(renameAudio.filepath, newNameWithExtension);
 
     if (success) {
       toast.success("Audio renamed successfully");
       setRenameAudio(null);
       setNewName("");
+      setFileExtension("");
       onRenameClose();
+      // Reload audios to show updated name
       loadAllAudios();
     } else {
       toast.error("Failed to rename audio");
@@ -206,7 +228,17 @@ export default function AudiosPage() {
 
   const openRename = (audio: AudioFile) => {
     setRenameAudio(audio);
-    setNewName(audio.filename);
+
+    // Get display name (without timestamp if it's metadata)
+    const displayName = getDisplayName(audio);
+
+    // Extract name without extension
+    const extensionMatch = displayName.match(/\.[^/.]+$/);
+    const extension = extensionMatch ? extensionMatch[0] : ".mp3";
+    const nameWithoutExt = displayName.replace(/\.[^/.]+$/, "");
+
+    setNewName(nameWithoutExt);
+    setFileExtension(extension);
     onRenameOpen();
   };
 
@@ -280,11 +312,11 @@ export default function AudiosPage() {
           />
 
           <FileTable
-            files={audios}
+            files={visibleAudios}
             columns={AUDIO_COLUMNS}
             selectedKeys={selectedAudios}
             onSelectionChange={setSelectedAudios}
-            loading={loading}
+            loading={loading || urlsLoading}
             emptyMessage="No audios in this folder"
             primaryAction={{
               label: "Play",
@@ -292,6 +324,25 @@ export default function AudiosPage() {
             }}
             rowActions={rowActions}
           />
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex justify-center mt-6">
+              <Pagination
+                total={totalPages}
+                page={currentPage}
+                onChange={setCurrentPage}
+                showControls
+                color="primary"
+                size="lg"
+              />
+            </div>
+          )}
+
+          {/* Stats */}
+          <div className="text-center text-sm text-default-500 mt-4">
+            Showing {startIndex + 1}-{Math.min(endIndex, audios.length)} of {audios.length} audios
+          </div>
         </div>
       </div>
 
@@ -361,18 +412,29 @@ export default function AudiosPage() {
       </Modal>
 
       {/* Preview Modal */}
-      <Modal isOpen={isPreviewOpen} onClose={onPreviewClose} size="2xl">
+      <Modal isOpen={isPreviewOpen} onClose={onPreviewClose} size="3xl">
         <ModalContent>
           <ModalHeader>{previewAudio ? getDisplayName(previewAudio) : ""}</ModalHeader>
           <ModalBody>
-            {previewAudio && (
-              <audio
-                controls
-                className="w-full"
-                src={getAudioStreamUrl(previewAudio.filepath)}
-              >
-                Your browser does not support audio playback.
-              </audio>
+            {previewAudio && audioUrls[previewAudio.filepath] ? (
+              <div className="flex flex-col items-center gap-4 p-8">
+                <div className="text-6xl">🎵</div>
+                <audio
+                  controls
+                  className="w-full"
+                  src={audioUrls[previewAudio.filepath]}
+                  autoPlay
+                >
+                  Your browser does not support audio playback.
+                </audio>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center min-h-[200px]">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                  <p className="text-default-500">Loading audio...</p>
+                </div>
+              </div>
             )}
           </ModalBody>
           <ModalFooter>
@@ -388,9 +450,15 @@ export default function AudiosPage() {
           <ModalBody>
             <Input
               label="New Name"
-              placeholder="Enter new name"
+              placeholder="Enter new name (without extension)"
               value={newName}
               onValueChange={setNewName}
+              endContent={
+                <span className="text-default-400 text-sm whitespace-nowrap">
+                  {fileExtension}
+                </span>
+              }
+              description="File extension cannot be changed"
             />
           </ModalBody>
           <ModalFooter>

@@ -96,6 +96,7 @@ async def process_single_video(
     background_tasks.add_task(
         processing_service.process_single_video,
         job_id,
+        user_id,
         request.video_path,
         request.audio_path,
         request.text_segments,
@@ -158,6 +159,7 @@ async def process_batch_videos(
     background_tasks.add_task(
         processing_service.process_batch_videos,
         job_id,
+        user_id,
         request.video_folder,
         request.audio_folder,
         request.text_combinations,

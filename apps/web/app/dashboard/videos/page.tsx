@@ -6,6 +6,7 @@ import { Button } from "@heroui/button";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Select, SelectItem } from "@heroui/select";
 import { Input } from "@heroui/input";
+import { Pagination } from "@heroui/pagination";
 import type { Selection } from "@heroui/table";
 
 import FileTable from "@/components/Dashboard/FileTable";
@@ -13,6 +14,7 @@ import FolderSidebar from "@/components/Dashboard/FolderSidebar";
 import BulkActions from "@/components/Dashboard/BulkActions";
 import type { VideoFile, Folder } from "@/lib/types";
 import { useFiles, useFolders, useUpload, useToast } from "@/lib/hooks";
+import { useVideoStreamUrls } from "@/lib/hooks/useVideoStreamUrl";
 
 const VIDEO_COLUMNS = [
   { key: "preview", label: "PREVIEW" },
@@ -24,7 +26,7 @@ const VIDEO_COLUMNS = [
 
 export default function VideosPage() {
   const { getToken } = useAuth();
-  const { listFiles, deleteFile, bulkDeleteFiles, bulkMoveFiles, renameFile, getVideoStreamUrl } = useFiles();
+  const { listFiles, deleteFile, bulkDeleteFiles, bulkMoveFiles, renameFile } = useFiles();
   const { listFolders, createFolder, deleteFolder } = useFolders();
   const { uploadFile, uploadMultipleFiles, uploadProgress, isUploading } = useUpload();
   const toast = useToast();
@@ -34,7 +36,10 @@ export default function VideosPage() {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedVideos, setSelectedVideos] = useState<Selection>(new Set());
-  const [videoUrls, setVideoUrls] = useState<Map<string, string>>(new Map());
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
 
   const { isOpen: isUploadOpen, onOpen: onUploadOpen, onClose: onUploadClose } = useDisclosure();
   const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
@@ -46,6 +51,7 @@ export default function VideosPage() {
   const [previewVideo, setPreviewVideo] = useState<VideoFile | null>(null);
   const [renameVideo, setRenameVideo] = useState<VideoFile | null>(null);
   const [newName, setNewName] = useState("");
+  const [fileExtension, setFileExtension] = useState("");
   const [moveToFolder, setMoveToFolder] = useState("");
 
   useEffect(() => {
@@ -67,6 +73,7 @@ export default function VideosPage() {
 
   const loadAllVideos = async () => {
     setLoading(true);
+    setCurrentPage(1); // Reset to first page when changing folders
     const response = await listFiles("videos", selectedFolder);
     setLoading(false);
 
@@ -74,20 +81,20 @@ export default function VideosPage() {
       const files = response.files as unknown as VideoFile[];
       setVideos(files);
       setSelectedVideos(new Set<string>());
-
-      // Pre-load stream URLs for all videos (only loads for visible videos now)
-      const urlMap = new Map<string, string>();
-      for (const video of files) {
-        const url = await getVideoStreamUrl(video.filepath);
-        if (url) {
-          urlMap.set(video.filepath, url);
-        }
-      }
-      setVideoUrls(urlMap);
     } else {
       toast.error("Failed to load video files");
     }
   };
+
+  // Calculate pagination
+  const totalPages = Math.ceil(videos.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const visibleVideos = videos.slice(startIndex, endIndex);
+
+  // Load stream URLs ONLY for visible videos (huge performance improvement!)
+  const visibleFilepaths = visibleVideos.map(v => v.filepath);
+  const { urls: videoUrls, isLoading: urlsLoading } = useVideoStreamUrls(visibleFilepaths);
 
   const handleCreateFolder = async (folderName: string) => {
     const result = await createFolder("videos", folderName);
@@ -199,13 +206,17 @@ export default function VideosPage() {
   const handleRename = async () => {
     if (!renameVideo || !newName.trim()) return;
 
-    const success = await renameFile(renameVideo.filepath, newName);
+    // Add extension back to the new name
+    const newNameWithExtension = newName + fileExtension;
+    const success = await renameFile(renameVideo.filepath, newNameWithExtension);
 
     if (success) {
       toast.success("Video renamed successfully");
       setRenameVideo(null);
       setNewName("");
+      setFileExtension("");
       onRenameClose();
+      // Reload videos to show updated name
       loadAllVideos();
     } else {
       toast.error("Failed to rename video");
@@ -219,7 +230,17 @@ export default function VideosPage() {
 
   const openRename = (video: VideoFile) => {
     setRenameVideo(video);
-    setNewName(video.filename);
+
+    // Get display name (without timestamp if it's metadata)
+    const displayName = getDisplayName(video);
+
+    // Extract name without extension
+    const extensionMatch = displayName.match(/\.[^/.]+$/);
+    const extension = extensionMatch ? extensionMatch[0] : ".mp4";
+    const nameWithoutExt = displayName.replace(/\.[^/.]+$/, "");
+
+    setNewName(nameWithoutExt);
+    setFileExtension(extension);
     onRenameOpen();
   };
 
@@ -293,11 +314,11 @@ export default function VideosPage() {
           />
 
           <FileTable
-            files={videos}
+            files={visibleVideos}
             columns={VIDEO_COLUMNS}
             selectedKeys={selectedVideos}
             onSelectionChange={setSelectedVideos}
-            loading={loading}
+            loading={loading || urlsLoading}
             emptyMessage="No videos in this folder"
             primaryAction={{
               label: "Preview",
@@ -310,7 +331,7 @@ export default function VideosPage() {
               if (columnKey === "preview") {
                 // Use thumbnail if available, otherwise fall back to video stream
                 const thumbnailUrl = video.metadata?.thumbnail_url;
-                const streamUrl = videoUrls.get(video.filepath);
+                const streamUrl = videoUrls[video.filepath];
 
                 return (
                   <div
@@ -323,18 +344,19 @@ export default function VideosPage() {
                         src={thumbnailUrl}
                         alt="Video thumbnail"
                         loading="lazy"
+                        decoding="async"
                       />
                     ) : streamUrl ? (
                       <video
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain bg-black"
                         src={`${streamUrl}#t=0.1`}
                         preload="metadata"
                         muted
                         playsInline
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-white text-xs">
-                        Loading...
+                      <div className="w-full h-full flex items-center justify-center bg-gray-800 animate-pulse">
+                        <div className="w-8 h-8 border-2 border-gray-600 border-t-gray-400 rounded-full animate-spin" />
                       </div>
                     )}
                   </div>
@@ -343,6 +365,25 @@ export default function VideosPage() {
               return null;
             }}
           />
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex justify-center mt-6">
+              <Pagination
+                total={totalPages}
+                page={currentPage}
+                onChange={setCurrentPage}
+                showControls
+                color="primary"
+                size="lg"
+              />
+            </div>
+          )}
+
+          {/* Stats */}
+          <div className="text-center text-sm text-default-500 mt-4">
+            Showing {startIndex + 1}-{Math.min(endIndex, videos.length)} of {videos.length} videos
+          </div>
         </div>
       </div>
 
@@ -416,18 +457,21 @@ export default function VideosPage() {
         <ModalContent>
           <ModalHeader>{previewVideo ? getDisplayName(previewVideo) : ""}</ModalHeader>
           <ModalBody>
-            {previewVideo && videoUrls.get(previewVideo.filepath) ? (
+            {previewVideo && videoUrls[previewVideo.filepath] ? (
               <video
                 controls
-                className="w-full max-h-[70vh] rounded-lg"
-                src={videoUrls.get(previewVideo.filepath)}
+                className="w-full max-h-[70vh] rounded-lg object-contain bg-black"
+                src={videoUrls[previewVideo.filepath]}
                 autoPlay
               >
                 Your browser does not support video playback.
               </video>
             ) : (
               <div className="flex items-center justify-center min-h-[400px]">
-                <p className="text-default-500">Loading video...</p>
+                <div className="flex flex-col items-center gap-4">
+                  <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                  <p className="text-default-500">Loading video...</p>
+                </div>
               </div>
             )}
           </ModalBody>
@@ -444,9 +488,15 @@ export default function VideosPage() {
           <ModalBody>
             <Input
               label="New Name"
-              placeholder="Enter new name"
+              placeholder="Enter new name (without extension)"
               value={newName}
               onValueChange={setNewName}
+              endContent={
+                <span className="text-default-400 text-sm whitespace-nowrap">
+                  {fileExtension}
+                </span>
+              }
+              description="File extension cannot be changed"
             />
           </ModalBody>
           <ModalFooter>

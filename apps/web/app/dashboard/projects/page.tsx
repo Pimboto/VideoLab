@@ -7,8 +7,10 @@ import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
 import { Chip } from "@heroui/chip";
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
+import { Pagination } from "@heroui/pagination";
 import type { Selection } from "@heroui/table";
 import { useAuthFetch } from "@/lib/hooks/useAuthFetch";
+import { useVideoStreamUrls } from "@/lib/hooks/useVideoStreamUrl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -39,6 +41,10 @@ export default function ProjectsPage() {
   const [selectedOutputs, setSelectedOutputs] = useState<Selection>(new Set());
   const [mounted, setMounted] = useState(false);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
+
   const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
 
   useEffect(() => {
@@ -51,6 +57,11 @@ export default function ProjectsPage() {
     const uniqueFolders = Array.from(new Set(outputs.map(o => o.folder).filter(Boolean)));
     setFolders(uniqueFolders);
   }, [outputs]);
+
+  useEffect(() => {
+    // Reset to first page when changing folders
+    setCurrentPage(1);
+  }, [selectedFolder]);
 
   const loadOutputs = async () => {
     setLoading(true);
@@ -71,6 +82,16 @@ export default function ProjectsPage() {
   const filteredOutputs = selectedFolder === "all"
     ? outputs
     : outputs.filter(o => o.folder === selectedFolder);
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredOutputs.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const visibleOutputs = filteredOutputs.slice(startIndex, endIndex);
+
+  // Load stream URLs ONLY for visible outputs (huge performance improvement!)
+  const visibleFilepaths = visibleOutputs.map(o => o.filepath);
+  const { urls: videoUrls, isLoading: urlsLoading } = useVideoStreamUrls(visibleFilepaths);
 
   const handleDownload = (output: OutputFile) => {
     const link = document.createElement("a");
@@ -278,80 +299,108 @@ export default function ProjectsPage() {
               <p className="text-default-500">Loading...</p>
             </div>
           ) : (
-            <Table
-              aria-label="Projects table"
-              selectionMode="multiple"
-              selectedKeys={selectedOutputs}
-              onSelectionChange={setSelectedOutputs}
-              classNames={{
-                wrapper: "min-h-[400px]",
-              }}
-            >
-              <TableHeader columns={PROJECT_COLUMNS}>
-                {(column) => (
-                  <TableColumn key={column.key}>
-                    {column.label}
-                  </TableColumn>
-                )}
-              </TableHeader>
-              <TableBody
-                items={filteredOutputs}
-                emptyContent={loading ? "Loading..." : "No projects in this folder"}
+            <>
+              <Table
+                aria-label="Projects table"
+                selectionMode="multiple"
+                selectedKeys={selectedOutputs}
+                onSelectionChange={setSelectedOutputs}
+                classNames={{
+                  wrapper: "min-h-[400px]",
+                }}
               >
-                {(output) => (
-                  <TableRow key={output.filepath}>
-                    <TableCell>
-                      <div
-                        className="w-20 h-12 bg-black rounded overflow-hidden cursor-pointer hover:opacity-80 transition"
-                        onClick={() => openPreview(output)}
-                      >
-                        <video
-                          className="w-full h-full object-cover"
-                          src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(output.filepath)}#t=0.1`}
-                          preload="metadata"
-                          muted
-                          playsInline
-                        />
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="max-w-xs">
-                        <p className="text-sm font-medium truncate">{output.filename}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Chip size="sm" variant="flat" color="secondary">
-                        {output.folder || "No folder"}
-                      </Chip>
-                    </TableCell>
-                    <TableCell>
-                      <p className="text-sm text-default-500">{formatFileSize(output.size)}</p>
-                    </TableCell>
-                    <TableCell>
-                      <p className="text-sm text-default-500">{formatDate(output.modified)}</p>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="flat" onPress={() => openPreview(output)}>
-                          Preview
-                        </Button>
-                        <Dropdown>
-                          <DropdownTrigger>
-                            <Button size="sm" variant="flat">⋮</Button>
-                          </DropdownTrigger>
-                          <DropdownMenu>
-                            <DropdownItem onPress={() => handleDownload(output)}>Download</DropdownItem>
-                            <DropdownItem onPress={() => handleDelete(output)} className="text-danger" color="danger">
-                              Delete
-                            </DropdownItem>
-                          </DropdownMenu>
-                        </Dropdown>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                <TableHeader columns={PROJECT_COLUMNS}>
+                  {(column) => (
+                    <TableColumn key={column.key}>
+                      {column.label}
+                    </TableColumn>
+                  )}
+                </TableHeader>
+                <TableBody
+                  items={visibleOutputs}
+                  isLoading={loading || urlsLoading}
+                  emptyContent={loading ? "Loading..." : "No projects in this folder"}
+                >
+                  {(output) => (
+                    <TableRow key={output.filepath}>
+                      <TableCell>
+                        <div
+                          className="w-20 h-12 bg-black rounded overflow-hidden cursor-pointer hover:opacity-80 transition"
+                          onClick={() => openPreview(output)}
+                        >
+                          {videoUrls[output.filepath] ? (
+                            <video
+                              className="w-full h-full object-contain bg-black"
+                              src={`${videoUrls[output.filepath]}#t=0.1`}
+                              preload="metadata"
+                              muted
+                              playsInline
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="max-w-xs">
+                          <p className="text-sm font-medium truncate">{output.filename}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Chip size="sm" variant="flat" color="secondary">
+                          {output.folder || "No folder"}
+                        </Chip>
+                      </TableCell>
+                      <TableCell>
+                        <p className="text-sm text-default-500">{formatFileSize(output.size)}</p>
+                      </TableCell>
+                      <TableCell>
+                        <p className="text-sm text-default-500">{formatDate(output.modified)}</p>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="flat" onPress={() => openPreview(output)}>
+                            Preview
+                          </Button>
+                          <Dropdown>
+                            <DropdownTrigger>
+                              <Button size="sm" variant="flat">⋮</Button>
+                            </DropdownTrigger>
+                            <DropdownMenu>
+                              <DropdownItem onPress={() => handleDownload(output)}>Download</DropdownItem>
+                              <DropdownItem onPress={() => handleDelete(output)} className="text-danger" color="danger">
+                                Delete
+                              </DropdownItem>
+                            </DropdownMenu>
+                          </Dropdown>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex justify-center mt-6">
+                  <Pagination
+                    total={totalPages}
+                    page={currentPage}
+                    onChange={setCurrentPage}
+                    showControls
+                    color="primary"
+                    size="lg"
+                  />
+                </div>
+              )}
+
+              {/* Stats */}
+              <div className="text-center text-sm text-default-500 mt-4">
+                Showing {startIndex + 1}-{Math.min(endIndex, filteredOutputs.length)} of {filteredOutputs.length} projects
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -361,14 +410,22 @@ export default function ProjectsPage() {
           <ModalContent>
             <ModalHeader>{previewVideo?.filename}</ModalHeader>
             <ModalBody>
-              {previewVideo && (
+              {previewVideo && videoUrls[previewVideo.filepath] ? (
                 <video
                   controls
-                  className="w-full max-h-[70vh] rounded-lg"
-                  src={`${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(previewVideo.filepath)}`}
+                  className="w-full max-h-[70vh] object-contain bg-black rounded-lg"
+                  src={videoUrls[previewVideo.filepath]}
+                  autoPlay
                 >
                   Your browser does not support video playback.
                 </video>
+              ) : (
+                <div className="flex items-center justify-center min-h-[400px]">
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                    <p className="text-default-500">Loading video...</p>
+                  </div>
+                </div>
               )}
             </ModalBody>
             <ModalFooter>

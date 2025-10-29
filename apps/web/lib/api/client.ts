@@ -132,7 +132,7 @@ class APIClient {
    * @param onProgress - Optional progress callback (0-100)
    * @returns The response data
    *
-   * Note: Progress represents HTTP upload (0-80%) then server processing to Supabase (80-100%)
+   * Note: Progress represents HTTP upload (0-80%) then server processing to AWS S3 (80-100%)
    */
   async upload<T = any>(
     endpoint: string,
@@ -148,7 +148,7 @@ class APIClient {
         xhr.upload.addEventListener("progress", (e) => {
           if (e.lengthComputable) {
             // HTTP upload is 80% of total progress
-            // Remaining 20% is server processing (uploading to Supabase Storage)
+            // Remaining 20% is server processing (uploading to AWS S3)
             const httpProgress = (e.loaded / e.total) * 80;
             onProgress(Math.round(httpProgress));
           }
@@ -156,7 +156,7 @@ class APIClient {
 
         // When upload completes, show 80% while waiting for server response
         xhr.upload.addEventListener("load", () => {
-          onProgress(80);
+          onProgress(80); // HTTP done, waiting for AWS S3 upload
         });
       }
 

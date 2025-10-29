@@ -27,3 +27,7 @@ svix==1.80.0
 
 # Database (Supabase)
 supabase==2.10.0
+
+# AWS SDK (S3 + CloudFront)
+boto3==1.34.30
+botocore==1.34.30
