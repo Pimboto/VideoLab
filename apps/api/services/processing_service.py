@@ -4,8 +4,11 @@ Processing service for video processing operations
 Works with AWS S3: downloads files from S3, processes them, and uploads results back.
 """
 import logging
+import os
 import re
+import subprocess
 import tempfile
+import zipfile
 from pathlib import Path
 from typing import List, Optional
 
@@ -22,6 +25,7 @@ from schemas.processing_schemas import (
     VideoListResponse,
 )
 from services.job_service import JobService
+from services.project_service import ProjectService
 from services.storage_service import StorageService
 from services.video_render_service import VideoRenderService
 from utils.ffmpeg_helper import VIDEO_EXTENSIONS, AUDIO_EXTENSIONS, run_ffmpeg_command
@@ -38,11 +42,13 @@ class ProcessingService:
         job_service: JobService,
         video_render_service: VideoRenderService,
         storage_service: Optional[StorageService] = None,
+        project_service: Optional[ProjectService] = None,
     ):
         self.settings = settings
         self.job_service = job_service
         self.video_render_service = video_render_service
         self.storage_service = storage_service
+        self.project_service = project_service or ProjectService()
 
         if not storage_service:
             raise ValueError("StorageService is required for S3 operations")
@@ -405,6 +411,122 @@ class ProcessingService:
             logger.error(f"Failed to upload output to S3: {str(e)}", exc_info=True)
             raise
 
+    def _generate_thumbnail_from_video(
+        self,
+        video_path: Path,
+        output_path: Path
+    ) -> bool:
+        """
+        Generate optimized thumbnail from video using ffmpeg.
+
+        Creates a 240x135 WebP thumbnail at 1 second mark with balanced quality.
+        If WebP fails, falls back to JPEG.
+
+        Args:
+            video_path: Path to video file
+            output_path: Path to save thumbnail (will use .webp or .jpg)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            import shutil
+
+            ffmpeg = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe")
+            if not ffmpeg:
+                logger.warning("FFmpeg not found, cannot generate thumbnail")
+                return False
+
+            # Try WebP first (much better compression than JPEG)
+            webp_path = output_path.with_suffix('.webp')
+
+            # Generate thumbnail using ffmpeg with WebP
+            result = subprocess.run(
+                [
+                    ffmpeg,
+                    '-y',  # Overwrite output
+                    '-ss', '1',  # Seek to 1 second
+                    '-i', str(video_path),  # Input
+                    '-vframes', '1',  # Extract 1 frame
+                    '-vf', 'scale=240:135:force_original_aspect_ratio=decrease',
+                    '-c:v', 'libwebp',  # WebP codec
+                    '-quality', '85',  # WebP quality (good balance)
+                    '-compression_level', '4',  # Balanced compression
+                    str(webp_path)
+                ],
+                capture_output=True,
+                timeout=10  # 10 second timeout
+            )
+
+            # If WebP succeeded, use it
+            if result.returncode == 0 and webp_path.exists():
+                # Rename to original output path if needed
+                if webp_path != output_path:
+                    if output_path.exists():
+                        output_path.unlink()
+                    webp_path.rename(output_path)
+                return True
+
+            # Fallback to JPEG if WebP failed
+            logger.warning("WebP thumbnail generation failed, falling back to JPEG")
+            result = subprocess.run(
+                [
+                    ffmpeg,
+                    '-y',  # Overwrite output
+                    '-ss', '1',  # Seek to 1 second
+                    '-i', str(video_path),  # Input
+                    '-vframes', '1',  # Extract 1 frame
+                    '-vf', 'scale=240:135:force_original_aspect_ratio=decrease',
+                    '-q:v', '5',  # JPEG quality (good balance)
+                    str(output_path)
+                ],
+                capture_output=True,
+                timeout=10
+            )
+
+            return result.returncode == 0 and output_path.exists()
+
+        except Exception as e:
+            logger.error(f"Error generating video thumbnail: {str(e)}", exc_info=True)
+            return False
+
+    def _create_zip_archive(
+        self,
+        video_files: List[Path],
+        output_zip_path: Path
+    ) -> bool:
+        """
+        Create ZIP archive with all processed videos.
+
+        Args:
+            video_files: List of video file paths to include
+            output_zip_path: Path to output ZIP file
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for video_file in video_files:
+                    if video_file.exists():
+                        # Add with just the filename (no directory structure)
+                        zipf.write(video_file, video_file.name)
+                        logger.debug(f"Added to ZIP: {video_file.name}")
+
+            if output_zip_path.exists():
+                zip_size = output_zip_path.stat().st_size
+                logger.info(
+                    f"ZIP archive created: {output_zip_path.name} ({zip_size} bytes)",
+                    extra={"file_count": len(video_files), "size": zip_size}
+                )
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Error creating ZIP archive: {str(e)}", exc_info=True)
+            return False
+
     async def process_single_video(
         self,
         job_id: str,
@@ -581,9 +703,11 @@ class ProcessingService:
         unique_mode: bool = False,
         unique_amount: int | None = None,
         config: ProcessingConfig | None = None,
+        project_id: Optional[str] = None,  # NEW: Project ID for tracking
     ) -> None:
         """
-        Process batch of videos from S3 (runs in background and uploads to S3).
+        Process batch of videos from S3.
+        Creates ZIP archive with all videos, uploads preview video + thumbnail.
 
         Args:
             job_id: Job ID
@@ -596,6 +720,7 @@ class ProcessingService:
             unique_mode: Use deterministic unique selection
             unique_amount: Number of unique combinations
             config: Processing configuration
+            project_id: Optional project ID for tracking output
         """
         try:
             self.job_service.update_job(
@@ -644,10 +769,13 @@ class ProcessingService:
             # Use temporary directory for downloads and outputs
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_base = Path(temp_dir)
-                output_files = []
+                processed_videos = []  # Store paths to processed videos
+                preview_video_path = None
+                total_size_bytes = 0
 
+                # Process all videos (5% to 85%)
                 for i, (vpath_s3, apath_s3, segments, idx) in enumerate(jobs, 1):
-                    progress = 5 + (i / total) * 90  # 5% to 95%
+                    progress = 5 + (i / total) * 80  # 5% to 85%
                     self.job_service.update_job(
                         job_id,
                         status="processing",
@@ -685,12 +813,15 @@ class ProcessingService:
                             config=cfg,
                         )
 
-                        if success and self.storage_service:
-                            # Upload to S3 with optimization
-                            s3_path = await self._upload_output_to_s3(
-                                temp_out_path, user_id, project_name
-                            )
-                            output_files.append(s3_path)
+                        if success and temp_out_path.exists():
+                            # Store processed video locally (don't upload yet)
+                            processed_videos.append(temp_out_path)
+                            total_size_bytes += temp_out_path.stat().st_size
+
+                            # First video becomes preview
+                            if preview_video_path is None:
+                                preview_video_path = temp_out_path
+                                logger.info(f"Selected preview video: {temp_out_path.name}")
                         else:
                             logger.error(
                                 f"Video processing failed for job {i}",
@@ -712,14 +843,115 @@ class ProcessingService:
                             extra={"job_number": i, "total_jobs": total},
                         )
 
-                # All processing done, temporary files auto-deleted when exiting context
-                self.job_service.update_job(
-                    job_id,
-                    status="completed",
-                    progress=100.0,
-                    message=f"Completed {len(output_files)}/{total} files",
-                    output_files=output_files,
-                )
+                # Now create ZIP, thumbnail, and upload (85% to 100%)
+                if processed_videos and self.storage_service:
+                    self.job_service.update_job(
+                        job_id,
+                        status="processing",
+                        progress=85.0,
+                        message="Creating ZIP archive...",
+                    )
+
+                    # Create ZIP with all videos
+                    zip_path = temp_base / f"{project_name}_batch.zip"
+                    zip_created = self._create_zip_archive(processed_videos, zip_path)
+
+                    # Generate thumbnail from preview video
+                    thumbnail_path = temp_base / f"{project_name}_thumbnail.webp"
+                    thumbnail_created = False
+                    if preview_video_path:
+                        thumbnail_created = self._generate_thumbnail_from_video(
+                            preview_video_path, thumbnail_path
+                        )
+
+                    self.job_service.update_job(
+                        job_id,
+                        status="processing",
+                        progress=90.0,
+                        message="Uploading files to S3...",
+                    )
+
+                    # Upload ZIP to S3
+                    zip_s3_path = None
+                    if zip_created and zip_path.exists():
+                        with open(zip_path, "rb") as f:
+                            zip_content = f.read()
+                        zip_s3_path, _ = await self.storage_service.upload_zip_file(
+                            user_id=user_id,
+                            project_name=project_name,
+                            zip_content=zip_content,
+                            filename=f"{project_name}_batch.zip"
+                        )
+                        logger.info(f"ZIP uploaded to S3: {zip_s3_path}")
+
+                    # Upload preview video to S3
+                    preview_s3_path = None
+                    if preview_video_path and preview_video_path.exists():
+                        with open(preview_video_path, "rb") as f:
+                            preview_content = f.read()
+                        preview_s3_path, _ = await self.storage_service.upload_output_file(
+                            user_id=user_id,
+                            project_name=project_name,
+                            filename=f"{project_name}_preview.mp4",
+                            file_content=preview_content,
+                            content_type="video/mp4"
+                        )
+                        logger.info(f"Preview video uploaded to S3: {preview_s3_path}")
+
+                    # Upload thumbnail to S3
+                    thumbnail_s3_path = None
+                    if thumbnail_created and thumbnail_path.exists():
+                        with open(thumbnail_path, "rb") as f:
+                            thumbnail_content = f.read()
+                        thumbnail_s3_path, _ = await self.storage_service.upload_output_file(
+                            user_id=user_id,
+                            project_name=project_name,
+                            filename=f"{project_name}_thumbnail.webp",
+                            file_content=thumbnail_content,
+                            content_type="image/webp"
+                        )
+                        logger.info(f"Thumbnail uploaded to S3: {thumbnail_s3_path}")
+
+                    # Update project with S3 paths (not full URLs - those are generated on-demand with signed URLs)
+                    if project_id:
+                        self.project_service.update_project_stats(
+                            project_id=project_id,
+                            video_count=len(processed_videos),
+                            total_size_bytes=total_size_bytes,
+                            user_id=user_id
+                        )
+                        self.project_service.update_project_output(
+                            project_id=project_id,
+                            preview_video_url=preview_s3_path,
+                            preview_thumbnail_url=thumbnail_s3_path,
+                            zip_url=zip_s3_path,
+                            user_id=user_id
+                        )
+                        logger.info(
+                            f"Project updated: {project_id} - {len(processed_videos)} videos, {total_size_bytes} bytes"
+                        )
+
+                    # Job completed
+                    output_info = []
+                    if zip_s3_path:
+                        output_info.append(zip_s3_path)
+                    if preview_s3_path:
+                        output_info.append(preview_s3_path)
+
+                    self.job_service.update_job(
+                        job_id,
+                        status="completed",
+                        progress=100.0,
+                        message=f"Completed {len(processed_videos)}/{total} videos (ZIP created)",
+                        output_files=output_info,
+                    )
+                else:
+                    self.job_service.update_job(
+                        job_id,
+                        status="failed",
+                        progress=0.0,
+                        message="No videos were processed successfully",
+                    )
 
         except Exception as e:
             logger.error(f"Batch processing error: {str(e)}", exc_info=True)

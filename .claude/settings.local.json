@@ -15,7 +15,8 @@
       "Bash(pip install:*)",
       "Bash(ffmpeg:*)",
       "Bash(python:*)",
-      "Bash(pnpm build:*)"
+      "Bash(pnpm build:*)",
+      "Bash(psql:*)"
     ],
     "deny": [],
     "ask": []

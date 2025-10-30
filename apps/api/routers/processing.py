@@ -5,7 +5,7 @@ from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Path
 
-from core.dependencies import get_job_service, get_processing_service, get_current_user
+from core.dependencies import get_job_service, get_processing_service, get_project_service, get_current_user
 from schemas.job_schemas import BatchJobResponse, JobDeleteResponse, JobStatus
 from schemas.processing_schemas import (
     AudioListRequest,
@@ -18,6 +18,7 @@ from schemas.processing_schemas import (
 )
 from services.job_service import JobService
 from services.processing_service import ProcessingService
+from services.project_service import ProjectService
 
 router = APIRouter(prefix="/processing", tags=["processing"])
 
@@ -116,6 +117,7 @@ async def process_batch_videos(
     current_user: dict = Depends(get_current_user),
     job_service: JobService = Depends(get_job_service),
     processing_service: ProcessingService = Depends(get_processing_service),
+    project_service: ProjectService = Depends(get_project_service),
 ) -> BatchJobResponse:
     """
     Process multiple videos in batch.
@@ -129,17 +131,18 @@ async def process_batch_videos(
     - **audio_folder**: Folder containing audios (optional)
     - **text_combinations**: List of text combinations
     - **output_folder**: Output folder for processed videos
+    - **project_name**: Name for the project (required)
     - **unique_mode**: Use deterministic unique selection
     - **unique_amount**: Number of unique combinations (if unique_mode=True)
     - **config**: Processing configuration (optional)
     """
     user_id = current_user["id"]
-    
+
     # Validate project_name is provided
     if not request.project_name or not request.project_name.strip():
         from core.exceptions import ValidationError
         raise ValidationError("Project name is required")
-    
+
     # Quick validation
     vids_response = await processing_service.list_videos_in_folder(request.video_folder, user_id)
     if vids_response.count == 0:
@@ -162,9 +165,25 @@ async def process_batch_videos(
     else:
         total = vids_response.count * rows_count * max(1, auds_count)
 
-    user_id = current_user["id"]
-    job_id = job_service.create_job(user_id, job_type="batch", initial_status="pending", message="Batch job queued")
+    # Create project BEFORE starting job
+    project = project_service.create_project(
+        user_id=user_id,
+        name=request.project_name,
+        description=f"Batch processing: {total} videos",
+        expires_in_hours=24
+    )
+    project_id = project.id
 
+    # Create job with project_id
+    job_id = job_service.create_job(
+        user_id,
+        job_type="batch",
+        initial_status="pending",
+        message="Batch job queued",
+        project_id=project_id
+    )
+
+    # Start batch processing with project_id
     background_tasks.add_task(
         processing_service.process_batch_videos,
         job_id,
@@ -177,10 +196,12 @@ async def process_batch_videos(
         request.unique_mode,
         request.unique_amount,
         request.config,
+        project_id,  # Pass project_id
     )
 
     return BatchJobResponse(
         job_id=job_id,
+        project_id=project_id,
         total_jobs=total,
         message=f"Batch job started with {total} videos to process",
     )

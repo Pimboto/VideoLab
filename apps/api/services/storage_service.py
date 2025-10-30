@@ -326,6 +326,62 @@ class StorageService:
         except Exception as e:
             raise StorageError(f"Failed to upload output file to S3: {str(e)}")
 
+    async def upload_zip_file(
+        self,
+        user_id: str,
+        project_name: str,
+        zip_content: bytes,
+        filename: str = "batch.zip"
+    ) -> tuple[str, int]:
+        """
+        Upload ZIP file to S3 with temporary tag for lifecycle deletion.
+
+        ZIP files are automatically deleted after 24 hours by S3 lifecycle rule.
+
+        Args:
+            user_id: User ID
+            project_name: Project name (used for folder organization)
+            zip_content: ZIP file content as bytes
+            filename: ZIP filename (default: batch.zip)
+
+        Returns:
+            Tuple of (storage_path, file_size)
+
+        Raises:
+            StorageError: If upload fails
+        """
+        try:
+            # Sanitize project name for S3 (remove invalid characters)
+            safe_project_name = self.sanitize_folder_name(project_name)
+
+            # Build storage path: users/{user_id}/output/{project_name}/{filename}
+            storage_path = f"users/{user_id}/output/{safe_project_name}/{filename}"
+            file_size = len(zip_content)
+
+            # Upload to S3 with temporary tag
+            # S3 lifecycle rule will delete after 24h based on this tag
+            self.s3_client.upload_file_with_tags(
+                key=storage_path,
+                file_content=zip_content,
+                tags={"purpose": "temporary"},  # For lifecycle rule
+                content_type="application/zip",
+                metadata={
+                    "project_name": project_name,
+                    "user_id": user_id,
+                    "original_filename": filename
+                }
+            )
+
+            logger.info(
+                f"ZIP file uploaded with temporary tag: {storage_path}",
+                extra={"user_id": user_id, "project_name": project_name, "size": file_size}
+            )
+
+            return storage_path, file_size
+
+        except Exception as e:
+            raise StorageError(f"Failed to upload ZIP file to S3: {str(e)}")
+
     async def download_file(
         self,
         category: str,

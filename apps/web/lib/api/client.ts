@@ -252,6 +252,13 @@ export const API_ENDPOINTS = {
     DELETE_JOB: (jobId: string) =>
       `/api/video-processor/processing/jobs/${jobId}`,
   },
+  // Projects
+  PROJECTS: {
+    LIST: "/api/video-processor/projects",
+    GET: (projectId: string) => `/api/video-processor/projects/${projectId}`,
+    DELETE: (projectId: string) => `/api/video-processor/projects/${projectId}`,
+    GET_URLS: (projectId: string) => `/api/video-processor/projects/${projectId}/urls`,
+  },
   // Health
   HEALTH: "/health",
 } as const;
@@ -296,4 +303,26 @@ export interface ProcessingConfigResponse {
     text_position: string;
     preset_name: string;
   };
+}
+
+export interface Project {
+  id: string;
+  user_id: string;
+  name: string;
+  description?: string;
+  output_folder?: string;
+  video_count: number;
+  total_size_bytes: number;
+  preview_video_url?: string;
+  preview_thumbnail_url?: string;
+  zip_url?: string;
+  created_at: string;
+  expires_at?: string;
+  deleted_at?: string;
+}
+
+export interface ProjectUrls {
+  preview_video_url: string | null;
+  preview_thumbnail_url: string | null;
+  zip_url: string | null;
 }

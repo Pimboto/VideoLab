@@ -12,6 +12,7 @@ from core.exceptions import UnauthorizedError
 from services.file_service import FileService
 from services.job_service import JobService
 from services.processing_service import ProcessingService
+from services.project_service import ProjectService
 from services.storage_service import StorageService
 from services.user_service import UserService
 from services.video_render_service import VideoRenderService
@@ -32,6 +33,12 @@ def get_storage_service() -> StorageService:
 def get_job_service() -> JobService:
     """Get job service instance with Supabase"""
     return JobService()
+
+
+@lru_cache
+def get_project_service() -> ProjectService:
+    """Get project service instance with Supabase"""
+    return ProjectService()
 
 
 @lru_cache

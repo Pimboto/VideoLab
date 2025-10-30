@@ -88,12 +88,20 @@ class JobService:
             
             job_data = result.data[0]
             
+            # Ensure output_files is always a list
+            output_files = job_data.get("output_files")
+            if output_files is None:
+                output_files = []
+            elif not isinstance(output_files, list):
+                output_files = []
+            
             return JobStatus(
                 job_id=job_data["id"],
                 status=job_data["status"],
                 progress=job_data.get("progress", 0.0),
                 message=job_data.get("message", ""),
-                output_files=job_data.get("output_files", []),
+                output_files=output_files,
+                project_id=job_data.get("project_id"),
             )
         except JobNotFoundError:
             raise
@@ -185,14 +193,22 @@ class JobService:
             
             jobs = []
             for job_data in result.data:
+                # Ensure output_files is always a list
+                output_files = job_data.get("output_files")
+                if output_files is None:
+                    output_files = []
+                elif not isinstance(output_files, list):
+                    output_files = []
+                
                 jobs.append(JobStatus(
                     job_id=job_data["id"],
                     status=job_data["status"],
                     progress=job_data.get("progress", 0.0),
                     message=job_data.get("message", ""),
-                    output_files=job_data.get("output_files", []),
+                    output_files=output_files,
+                    project_id=job_data.get("project_id"),
                 ))
-            
+
             return jobs
         except Exception as e:
             raise StorageError(f"Failed to list jobs: {str(e)}")

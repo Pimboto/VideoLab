@@ -10,12 +10,15 @@ from pydantic import BaseModel, Field
 
 class ProjectBase(BaseModel):
     """Base project model"""
-    
+
     name: str
     description: Optional[str] = None
     output_folder: Optional[str] = None  # Supabase Storage folder path
     video_count: int = 0
     total_size_bytes: int = 0
+    preview_video_url: Optional[str] = None  # URL to preview video
+    preview_thumbnail_url: Optional[str] = None  # URL to preview thumbnail
+    zip_url: Optional[str] = None  # URL to ZIP file with all videos
 
 
 class ProjectCreate(ProjectBase):
@@ -26,11 +29,14 @@ class ProjectCreate(ProjectBase):
 
 class ProjectUpdate(BaseModel):
     """Model for updating project information"""
-    
+
     name: Optional[str] = None
     description: Optional[str] = None
     video_count: Optional[int] = None
     total_size_bytes: Optional[int] = None
+    preview_video_url: Optional[str] = None
+    preview_thumbnail_url: Optional[str] = None
+    zip_url: Optional[str] = None
     deleted_at: Optional[datetime] = None
 
 

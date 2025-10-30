@@ -26,7 +26,7 @@ const libraryItems = [
   { name: "Projects", icon: Folder, href: "/dashboard/projects" },
   { name: "Videos", icon: VideoSquare, href: "/dashboard/videos" },
   { name: "Audios", icon: AudioSquare, href: "/dashboard/audios" },
-  { name: "Texts", icon: DocumentText, href: "/dashboard/texts" },
+  { name: "Hooks", icon: DocumentText, href: "/dashboard/texts" },
 /*   { name: "Community", icon: Star1, href: "/dashboard/community" }, */
 ];
 

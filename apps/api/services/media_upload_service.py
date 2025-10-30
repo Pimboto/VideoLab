@@ -48,11 +48,11 @@ class MediaUploadService:
         output_path: str
     ) -> bool:
         """
-        Generate ultra-optimized thumbnail from video using ffmpeg.
+        Generate optimized thumbnail from video using ffmpeg.
 
-        Creates a 100x56 WebP thumbnail at 1 second mark with aggressive compression.
+        Creates a 240x135 WebP thumbnail at 1 second mark with balanced quality.
         If WebP fails, falls back to JPEG.
-        Optimized for instant loading and minimal bandwidth.
+        Optimized for good visual quality while maintaining reasonable file size.
 
         Args:
             video_content: Video file content in bytes
@@ -79,10 +79,10 @@ class MediaUploadService:
                         '-ss', '1',  # Seek to 1 second
                         '-i', temp_video_path,  # Input
                         '-vframes', '1',  # Extract 1 frame
-                        '-vf', 'scale=100:56',  # Scale to 100x56 (ultra tiny)
+                        '-vf', 'scale=135:240:force_original_aspect_ratio=decrease', 
                         '-c:v', 'libwebp',  # WebP codec
-                        '-quality', '60',  # WebP quality
-                        '-compression_level', '6',  # Max compression
+                        '-quality', '85',  # WebP quality (good balance)
+                        '-compression_level', '4',  # Balanced compression
                         webp_path
                     ],
                     capture_output=True,
@@ -107,8 +107,8 @@ class MediaUploadService:
                         '-ss', '1',  # Seek to 1 second
                         '-i', temp_video_path,  # Input
                         '-vframes', '1',  # Extract 1 frame
-                        '-vf', 'scale=100:56',  # Scale to 100x56
-                        '-q:v', '10',  # JPEG quality (aggressive compression)
+                        '-vf', 'scale=240:135:force_original_aspect_ratio=decrease',  # Scale to 240x135 (16:9 aspect ratio)
+                        '-q:v', '5',  # JPEG quality (good balance - lower number = higher quality)
                         output_path
                     ],
                     capture_output=True,

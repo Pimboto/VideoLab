@@ -52,6 +52,7 @@ export default function CreatePage() {
   const [selectedCSV, setSelectedCSV] = useState("");
   const [projectName, setProjectName] = useState("");
   const [previewVideoSrc, setPreviewVideoSrc] = useState("");
+  const [previewText, setPreviewText] = useState("Sample Text");
 
   const [position, setPosition] = useState("center");
   const [preset, setPreset] = useState("instagram1");
@@ -71,6 +72,12 @@ export default function CreatePage() {
       loadPreviewVideo(selectedVideoFolder);
     }
   }, [selectedVideoFolder]);
+
+  useEffect(() => {
+    if (selectedCSV) {
+      loadPreviewText(selectedCSV);
+    }
+  }, [selectedCSV]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -126,22 +133,44 @@ export default function CreatePage() {
       if (data && data.files && data.files.length > 0) {
         const firstVideo = data.files[0];
 
-        // Check if video has a thumbnail in metadata
-        const thumbnailUrl = firstVideo.metadata?.thumbnail_url;
-
-        if (thumbnailUrl) {
-          // Use thumbnail for preview (better performance)
-          setPreviewVideoSrc(thumbnailUrl);
-        } else {
-          // Fallback to video stream if no thumbnail
-          const streamUrl = await getVideoStreamUrl(firstVideo.filepath);
-          if (streamUrl) {
-            setPreviewVideoSrc(streamUrl);
-          }
+        // Always load video stream for preview
+        const streamUrl = await getVideoStreamUrl(firstVideo.filepath);
+        if (streamUrl) {
+          setPreviewVideoSrc(streamUrl);
         }
       }
     } catch (error) {
       console.error("Error loading preview video:", error);
+    }
+  };
+
+  const loadPreviewText = async (csvFilepath: string) => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+
+      const csvPreviewUrl = getCsvPreviewUrl(csvFilepath);
+      const csvRes = await fetch(csvPreviewUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!csvRes.ok) {
+        console.error("Failed to load CSV file");
+        return;
+      }
+
+      const csvData = await csvRes.json();
+      const combinations = csvData.combinations || [];
+
+      // Get first text from first combination
+      if (combinations.length > 0 && combinations[0].length > 0) {
+        setPreviewText(combinations[0][0]);
+      } else {
+        setPreviewText("Sample Text");
+      }
+    } catch (error) {
+      console.error("Error loading preview text:", error);
+      setPreviewText("Sample Text");
     }
   };
 
@@ -508,8 +537,6 @@ export default function CreatePage() {
                 value={projectName}
                 onValueChange={setProjectName}
                 isRequired
-                isInvalid={!projectName.trim()}
-                errorMessage={!projectName.trim() ? "Project name is required" : ""}
                 size="sm"
               />
             </CardBody>
@@ -539,24 +566,16 @@ export default function CreatePage() {
             <Divider />
             <CardBody>
               <div className="relative aspect-[9/16] max-h-[75vh] bg-gradient-to-br from-gray-900 to-gray-800 rounded-lg overflow-hidden shadow-lg">
-                {/* Video or thumbnail background */}
+                {/* Video background */}
                 {previewVideoSrc ? (
-                  // Check if it's an image (thumbnail) or video
-                  previewVideoSrc.includes('/thumbnails/') || previewVideoSrc.endsWith('.jpg') || previewVideoSrc.endsWith('.webp') ? (
-                    <img
-                      className={`absolute inset-0 w-full h-full ${getFitModeStyle()}`}
-                      src={previewVideoSrc}
-                      alt="Video preview"
-                    />
-                  ) : (
-                    <video
-                      className={`absolute inset-0 w-full h-full ${getFitModeStyle()}`}
-                      src={`${previewVideoSrc}#t=0.1`}
-                      preload="metadata"
-                      muted
-                      playsInline
-                    />
-                  )
+                  <video
+                    className={`absolute inset-0 w-full h-full ${getFitModeStyle()}`}
+                    src={`${previewVideoSrc}#t=0.1`}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                  />
                 ) : (
                   <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-orange-500/20">
                     <div className="absolute inset-0 opacity-20">
@@ -583,7 +602,7 @@ export default function CreatePage() {
                     <p
                       className={`${getTextPresetStyle(preset)} leading-tight `}
                     >
-                      Sample Text
+                      {previewText}
                     </p>
                   </div>
                 </div>

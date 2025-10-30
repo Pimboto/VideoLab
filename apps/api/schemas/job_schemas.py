@@ -1,7 +1,7 @@
 """
 Job-related Pydantic schemas
 """
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -16,6 +16,7 @@ class JobStatus(BaseModel):
     output_files: List[str] = Field(
         default_factory=list, description="List of output file paths"
     )
+    project_id: Optional[str] = Field(default=None, description="Associated project ID (for batch jobs)")
 
     @field_validator("status")
     @classmethod
@@ -39,6 +40,7 @@ class BatchJobResponse(BaseModel):
     """Response after creating a batch job"""
 
     job_id: str = Field(..., description="Unique job identifier")
+    project_id: str = Field(..., description="Associated project ID")
     total_jobs: int = Field(..., description="Total number of videos to process", ge=0)
     message: str = Field(..., description="Creation message")
 

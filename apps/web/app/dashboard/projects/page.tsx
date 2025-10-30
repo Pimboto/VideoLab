@@ -1,181 +1,111 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { Button } from "@heroui/button";
-import { Card, CardBody, CardHeader } from "@heroui/card";
+import { Card, CardBody } from "@heroui/card";
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
 import { Chip } from "@heroui/chip";
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
 import { Pagination } from "@heroui/pagination";
 import type { Selection } from "@heroui/table";
-import { useAuthFetch } from "@/lib/hooks/useAuthFetch";
-import { useVideoStreamUrls } from "@/lib/hooks/useVideoStreamUrl";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import {
+  useProjects,
+  useProjectUrls,
+  useDeleteProject,
+  useDownloadProject,
+} from "@/lib/hooks";
+import type { Project } from "@/lib/api/client";
+import Image from "next/image";
 
 const PROJECT_COLUMNS = [
-  { key: "preview", label: "PREVIEW" },
-  { key: "name", label: "NAME" },
-  { key: "folder", label: "FOLDER" },
+  { key: "thumbnail", label: "PREVIEW" },
+  { key: "name", label: "PROJECT NAME" },
+  { key: "videos", label: "VIDEOS" },
   { key: "size", label: "SIZE" },
-  { key: "modified", label: "MODIFIED" },
+  { key: "created", label: "CREATED" },
   { key: "actions", label: "ACTIONS" }
 ] as const;
 
-interface OutputFile {
-  filename: string;
-  filepath: string;
-  size: number;
-  modified: string;
-  folder: string;
-}
+function ProjectsPageContent() {
+  // Fetch projects using TanStack Query
+  const { data: projects = [], isLoading, error, refetch } = useProjects();
 
-export default function ProjectsPage() {
-  const authFetch = useAuthFetch();
-  const [outputs, setOutputs] = useState<OutputFile[]>([]);
-  const [folders, setFolders] = useState<string[]>([]);
-  const [selectedFolder, setSelectedFolder] = useState<string>("all");
-  const [loading, setLoading] = useState(false);
-  const [previewVideo, setPreviewVideo] = useState<OutputFile | null>(null);
-  const [selectedOutputs, setSelectedOutputs] = useState<Selection>(new Set());
+  const [selectedProjects, setSelectedProjects] = useState<Selection>(new Set());
+  const [previewProject, setPreviewProject] = useState<Project | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 20;
+  // Ensure client-side only rendering for time-sensitive data
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
 
-  useEffect(() => {
-    setMounted(true);
-    loadOutputs();
-  }, []);
+  // Mutations
+  const deleteProjectMutation = useDeleteProject();
+  const downloadProjectMutation = useDownloadProject();
 
-  useEffect(() => {
-    // Extract unique folders from outputs
-    const uniqueFolders = Array.from(new Set(outputs.map(o => o.folder).filter(Boolean)));
-    setFolders(uniqueFolders);
-  }, [outputs]);
-
-  useEffect(() => {
-    // Reset to first page when changing folders
-    setCurrentPage(1);
-  }, [selectedFolder]);
-
-  const loadOutputs = async () => {
-    setLoading(true);
-    try {
-      const res = await authFetch(`${API_URL}/api/video-processor/files/outputs`);
-      if (res.ok) {
-        const data = await res.json();
-        setOutputs(data.files || []);
-        setSelectedOutputs(new Set<string>());
-      }
-    } catch (error) {
-      console.error("Error loading projects:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filteredOutputs = selectedFolder === "all"
-    ? outputs
-    : outputs.filter(o => o.folder === selectedFolder);
-
-  // Calculate pagination
-  const totalPages = Math.ceil(filteredOutputs.length / ITEMS_PER_PAGE);
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
+  const totalPages = Math.ceil(projects.length / ITEMS_PER_PAGE);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const endIndex = startIndex + ITEMS_PER_PAGE;
-  const visibleOutputs = filteredOutputs.slice(startIndex, endIndex);
+  const visibleProjects = projects.slice(startIndex, endIndex);
 
-  // Load stream URLs ONLY for visible outputs (huge performance improvement!)
-  const visibleFilepaths = visibleOutputs.map(o => o.filepath);
-  const { urls: videoUrls, isLoading: urlsLoading } = useVideoStreamUrls(visibleFilepaths);
-
-  const handleDownload = (output: OutputFile) => {
-    const link = document.createElement("a");
-    link.href = `${API_URL}/api/video-processor/files/stream/video?filepath=${encodeURIComponent(output.filepath)}`;
-    link.download = output.filename;
-    link.click();
+  const handlePreview = (project: Project) => {
+    setPreviewProject(project);
+    onPreviewOpen();
   };
 
-  const handleBulkDownload = async () => {
-    const selection = selectedOutputs === "all" ? filteredOutputs.map(o => o.filepath) : Array.from(selectedOutputs);
-    if (selection.length === 0) return;
-
-    // Download each file one by one
-    for (const filepath of selection) {
-      const output = outputs.find(o => o.filepath === filepath);
-      if (output) {
-        handleDownload(output);
-        // Small delay between downloads
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
+  const handleDownload = async (project: Project) => {
+    try {
+      await downloadProjectMutation.mutateAsync({
+        projectId: project.id,
+        projectName: project.name,
+      });
+    } catch (error) {
+      console.error("Download failed:", error);
     }
   };
 
-  const handleDownloadFolder = async () => {
-    if (selectedFolder === "all") return;
-
-    const folderOutputs = outputs.filter(o => o.folder === selectedFolder);
-    if (folderOutputs.length === 0) return;
-
-    if (!confirm(`Download all ${folderOutputs.length} files from "${selectedFolder}" folder?`)) return;
-
-    for (const output of folderOutputs) {
-      handleDownload(output);
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-  };
-
-  const handleDelete = async (output: OutputFile) => {
-    if (!confirm(`Delete ${output.filename}?`)) return;
+  const handleDelete = async (project: Project) => {
+    if (!confirm(`Delete project "${project.name}"?`)) return;
 
     try {
-      const res = await authFetch(`${API_URL}/api/video-processor/files/delete`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filepath: output.filepath })
+      await deleteProjectMutation.mutateAsync({
+        projectId: project.id,
+        hardDelete: false, // Soft delete by default
       });
-
-      if (res.ok) {
-        loadOutputs();
-      }
     } catch (error) {
-      console.error("Error deleting output:", error);
+      console.error("Delete failed:", error);
     }
   };
 
   const handleBulkDelete = async () => {
-    const selection = selectedOutputs === "all" ? filteredOutputs.map(o => o.filepath) : Array.from(selectedOutputs);
+    const selection = selectedProjects === "all"
+      ? visibleProjects.map(p => p.id)
+      : Array.from(selectedProjects);
+
     if (selection.length === 0) return;
     if (!confirm(`Delete ${selection.length} selected projects?`)) return;
 
     try {
-      const deletePromises = selection.map(filepath =>
-        fetch(`${API_URL}/api/video-processor/files/delete`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filepath })
-        })
+      await Promise.all(
+        selection.map(projectId =>
+          deleteProjectMutation.mutateAsync({ projectId: projectId as string })
+        )
       );
-
-      await Promise.all(deletePromises);
-      setSelectedOutputs(new Set<string>());
-      loadOutputs();
+      setSelectedProjects(new Set<string>());
     } catch (error) {
-      console.error("Error deleting outputs:", error);
+      console.error("Bulk delete failed:", error);
     }
   };
 
-  const openPreview = (output: OutputFile) => {
-    setPreviewVideo(output);
-    onPreviewOpen();
-  };
-
   const getSelectedCount = () => {
-    return selectedOutputs === "all" ? filteredOutputs.length : selectedOutputs.size;
+    return selectedProjects === "all" ? visibleProjects.length : selectedProjects.size;
   };
 
   const formatFileSize = (bytes: number) => {
@@ -186,11 +116,32 @@ export default function ProjectsPage() {
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric"
-    });
+    // Use consistent UTC-based formatting to avoid hydration errors
+    const year = date.getUTCFullYear();
+    const month = date.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+    const day = date.getUTCDate();
+    const hours = date.getUTCHours().toString().padStart(2, "0");
+    const minutes = date.getUTCMinutes().toString().padStart(2, "0");
+    return `${month} ${day}, ${year} ${hours}:${minutes}`;
+  };
+
+  const getTimeUntilExpiration = (expiresAt: string | undefined) => {
+    if (!expiresAt) return null;
+
+    const now = new Date().getTime();
+    const expiration = new Date(expiresAt).getTime();
+    const diff = expiration - now;
+
+    if (diff <= 0) return "Expired";
+
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (hours > 0) {
+      return `Expires in ${hours}h ${minutes}m`;
+    } else {
+      return `Expires in ${minutes}m`;
+    }
   };
 
   return (
@@ -198,247 +149,348 @@ export default function ProjectsPage() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-3xl font-bold mb-2">Projects</h1>
-          <p className="text-default-500">View and download your processed videos</p>
+          <p className="text-default-500">
+            View and download your completed batch processing projects
+          </p>
         </div>
-        <Button onPress={loadOutputs} variant="flat">
+        <Button onPress={() => refetch()} variant="flat" isLoading={isLoading}>
           Refresh
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Sidebar - Folders Filter */}
-        <div className="lg:col-span-1">
-          <Card>
-            <CardHeader>
-              <h3 className="font-semibold">Folders</h3>
-            </CardHeader>
-            <CardBody className="gap-2">
-              <Button
-                variant={selectedFolder === "all" ? "flat" : "light"}
-                color={selectedFolder === "all" ? "primary" : "default"}
-                className="justify-start"
-                onPress={() => setSelectedFolder("all")}
-              >
-                All Projects
-                <Chip size="sm" variant="flat" className="ml-auto">
-                  {outputs.length}
+      {/* Bulk Actions Bar */}
+      {getSelectedCount() > 0 && (
+        <div className="mb-4 flex gap-2 items-center bg-default-100 p-3 rounded-lg">
+          <Chip color="primary">{getSelectedCount()} selected</Chip>
+          <Button
+            size="sm"
+            color="danger"
+            variant="flat"
+            onPress={handleBulkDelete}
+            isLoading={deleteProjectMutation.isPending}
+          >
+            Delete Selected
+          </Button>
+          <Button
+            size="sm"
+            variant="flat"
+            onPress={() => setSelectedProjects(new Set<string>())}
+          >
+            Clear Selection
+          </Button>
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <Card className="mb-4 bg-danger-50 border-danger">
+          <CardBody>
+            <p className="text-danger">Error loading projects: {error.message}</p>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Projects Table */}
+      <Table
+        aria-label="Projects table"
+        selectionMode="multiple"
+        selectedKeys={selectedProjects}
+        onSelectionChange={setSelectedProjects}
+        classNames={{
+          wrapper: "min-h-[400px]",
+        }}
+      >
+        <TableHeader columns={PROJECT_COLUMNS}>
+          {(column) => (
+            <TableColumn key={column.key}>
+              {column.label}
+            </TableColumn>
+          )}
+        </TableHeader>
+        <TableBody
+          items={visibleProjects}
+          isLoading={isLoading}
+          emptyContent={isLoading ? "Loading projects..." : "No projects found"}
+        >
+          {(project) => (
+            <TableRow key={project.id}>
+              <TableCell>
+                <ProjectThumbnail project={project} onClick={() => handlePreview(project)} />
+              </TableCell>
+              <TableCell>
+                <div className="max-w-xs">
+                  <p className="text-sm font-medium truncate">{project.name}</p>
+                  {project.description && (
+                    <p className="text-xs text-default-500 truncate">
+                      {project.description}
+                    </p>
+                  )}
+                </div>
+              </TableCell>
+              <TableCell>
+                <Chip size="sm" variant="flat" color="secondary">
+                  {project.video_count} videos
                 </Chip>
-              </Button>
-              {folders.map((folder) => {
-                const count = outputs.filter(o => o.folder === folder).length;
-                return (
-                  <div key={folder} className="flex items-center gap-2">
-                    <Button
-                      variant={selectedFolder === folder ? "flat" : "light"}
-                      color={selectedFolder === folder ? "primary" : "default"}
-                      className="justify-start flex-1"
-                      onPress={() => setSelectedFolder(folder)}
-                    >
-                      {folder}
-                      <Chip size="sm" variant="flat" className="ml-auto">
-                        {count}
-                      </Chip>
-                    </Button>
-                    <Dropdown>
-                      <DropdownTrigger>
-                        <Button size="sm" variant="light" isIconOnly>
-                          ⋮
-                        </Button>
-                      </DropdownTrigger>
-                      <DropdownMenu>
-                        <DropdownItem
-                          onPress={() => {
-                            setSelectedFolder(folder);
-                            setTimeout(handleDownloadFolder, 100);
-                          }}
-                        >
-                          Download All ({count})
-                        </DropdownItem>
-                      </DropdownMenu>
-                    </Dropdown>
-                  </div>
-                );
-              })}
-            </CardBody>
-          </Card>
-        </div>
-
-        {/* Main Content - Table */}
-        <div className="lg:col-span-3">
-          {getSelectedCount() > 0 && (
-            <div className="mb-4 flex gap-2 items-center bg-default-100 p-3 rounded-lg">
-              <Chip color="primary">{getSelectedCount()} selected</Chip>
-              <Button
-                size="sm"
-                color="primary"
-                variant="flat"
-                onPress={handleBulkDownload}
-              >
-                Download Selected
-              </Button>
-              <Button
-                size="sm"
-                color="danger"
-                variant="flat"
-                onPress={handleBulkDelete}
-              >
-                Delete Selected
-              </Button>
-              <Button
-                size="sm"
-                variant="flat"
-                onPress={() => setSelectedOutputs(new Set<string>())}
-              >
-                Clear Selection
-              </Button>
-            </div>
-          )}
-
-          {!mounted ? (
-            <div className="flex items-center justify-center min-h-[400px]">
-              <p className="text-default-500">Loading...</p>
-            </div>
-          ) : (
-            <>
-              <Table
-                aria-label="Projects table"
-                selectionMode="multiple"
-                selectedKeys={selectedOutputs}
-                onSelectionChange={setSelectedOutputs}
-                classNames={{
-                  wrapper: "min-h-[400px]",
-                }}
-              >
-                <TableHeader columns={PROJECT_COLUMNS}>
-                  {(column) => (
-                    <TableColumn key={column.key}>
-                      {column.label}
-                    </TableColumn>
+              </TableCell>
+              <TableCell>
+                <p className="text-sm text-default-500">
+                  {formatFileSize(project.total_size_bytes)}
+                </p>
+              </TableCell>
+              <TableCell>
+                <div>
+                  <p className="text-sm text-default-500">
+                    {formatDate(project.created_at)}
+                  </p>
+                  {mounted && project.expires_at && getTimeUntilExpiration(project.expires_at) && (
+                    <p className="text-xs text-warning mt-1">
+                      {getTimeUntilExpiration(project.expires_at)}
+                    </p>
                   )}
-                </TableHeader>
-                <TableBody
-                  items={visibleOutputs}
-                  isLoading={loading || urlsLoading}
-                  emptyContent={loading ? "Loading..." : "No projects in this folder"}
-                >
-                  {(output) => (
-                    <TableRow key={output.filepath}>
-                      <TableCell>
-                        <div
-                          className="w-20 h-12 bg-black rounded overflow-hidden cursor-pointer hover:opacity-80 transition"
-                          onClick={() => openPreview(output)}
-                        >
-                          {videoUrls[output.filepath] ? (
-                            <video
-                              className="w-full h-full object-contain bg-black"
-                              src={`${videoUrls[output.filepath]}#t=0.1`}
-                              preload="metadata"
-                              muted
-                              playsInline
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="max-w-xs">
-                          <p className="text-sm font-medium truncate">{output.filename}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Chip size="sm" variant="flat" color="secondary">
-                          {output.folder || "No folder"}
-                        </Chip>
-                      </TableCell>
-                      <TableCell>
-                        <p className="text-sm text-default-500">{formatFileSize(output.size)}</p>
-                      </TableCell>
-                      <TableCell>
-                        <p className="text-sm text-default-500">{formatDate(output.modified)}</p>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="flat" onPress={() => openPreview(output)}>
-                            Preview
-                          </Button>
-                          <Dropdown>
-                            <DropdownTrigger>
-                              <Button size="sm" variant="flat">⋮</Button>
-                            </DropdownTrigger>
-                            <DropdownMenu>
-                              <DropdownItem onPress={() => handleDownload(output)}>Download</DropdownItem>
-                              <DropdownItem onPress={() => handleDelete(output)} className="text-danger" color="danger">
-                                Delete
-                              </DropdownItem>
-                            </DropdownMenu>
-                          </Dropdown>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex justify-center mt-6">
-                  <Pagination
-                    total={totalPages}
-                    page={currentPage}
-                    onChange={setCurrentPage}
-                    showControls
-                    color="primary"
-                    size="lg"
-                  />
                 </div>
-              )}
-
-              {/* Stats */}
-              <div className="text-center text-sm text-default-500 mt-4">
-                Showing {startIndex + 1}-{Math.min(endIndex, filteredOutputs.length)} of {filteredOutputs.length} projects
-              </div>
-            </>
+              </TableCell>
+              <TableCell>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    onPress={() => handlePreview(project)}
+                  >
+                    Preview
+                  </Button>
+                  <Dropdown>
+                    <DropdownTrigger>
+                      <Button size="sm" variant="flat">⋮</Button>
+                    </DropdownTrigger>
+                    <DropdownMenu>
+                      <DropdownItem
+                        onPress={() => handleDownload(project)}
+                        isDisabled={!project.zip_url}
+                      >
+                        Download ZIP
+                      </DropdownItem>
+                      <DropdownItem
+                        onPress={() => handleDelete(project)}
+                        className="text-danger"
+                        color="danger"
+                      >
+                        Delete
+                      </DropdownItem>
+                    </DropdownMenu>
+                  </Dropdown>
+                </div>
+              </TableCell>
+            </TableRow>
           )}
-        </div>
-      </div>
+        </TableBody>
+      </Table>
 
-      {mounted && (
-        <Modal isOpen={isPreviewOpen} onClose={onPreviewClose} size="5xl" scrollBehavior="inside">
-          <ModalContent>
-            <ModalHeader>{previewVideo?.filename}</ModalHeader>
-            <ModalBody>
-              {previewVideo && videoUrls[previewVideo.filepath] ? (
-                <video
-                  controls
-                  className="w-full max-h-[70vh] object-contain bg-black rounded-lg"
-                  src={videoUrls[previewVideo.filepath]}
-                  autoPlay
-                >
-                  Your browser does not support video playback.
-                </video>
-              ) : (
-                <div className="flex items-center justify-center min-h-[400px]">
-                  <div className="flex flex-col items-center gap-4">
-                    <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-                    <p className="text-default-500">Loading video...</p>
-                  </div>
-                </div>
-              )}
-            </ModalBody>
-            <ModalFooter>
-              <Button variant="light" onPress={onPreviewClose}>
-                Close
-              </Button>
-              <Button color="primary" onPress={() => previewVideo && handleDownload(previewVideo)}>
-                Download
-              </Button>
-            </ModalFooter>
-          </ModalContent>
-        </Modal>
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex justify-center mt-6">
+          <Pagination
+            total={totalPages}
+            page={currentPage}
+            onChange={setCurrentPage}
+            showControls
+            color="primary"
+            size="lg"
+          />
+        </div>
+      )}
+
+      {/* Stats */}
+      {projects.length > 0 && (
+        <div className="text-center text-sm text-default-500 mt-4">
+          Showing {startIndex + 1}-{Math.min(endIndex, projects.length)} of {projects.length} projects
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      {mounted && previewProject && (
+        <PreviewModal
+          project={previewProject}
+          isOpen={isPreviewOpen}
+          onClose={onPreviewClose}
+          onDownload={() => handleDownload(previewProject)}
+          mounted={mounted}
+        />
       )}
     </div>
+  );
+}
+
+// Export with SSR disabled to prevent hydration errors
+export default dynamic(() => Promise.resolve(ProjectsPageContent), {
+  ssr: false,
+  loading: () => (
+    <div className="p-8">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-3xl font-bold mb-2">Projects</h1>
+          <p className="text-default-500">Loading projects...</p>
+        </div>
+      </div>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    </div>
+  ),
+});
+
+/**
+ * Project Thumbnail Component
+ * Loads thumbnail image using signed CloudFront URLs
+ */
+function ProjectThumbnail({
+  project,
+  onClick
+}: {
+  project: Project;
+  onClick: () => void;
+}) {
+  const { data: urls, isLoading } = useProjectUrls(project.id);
+
+  return (
+    <div
+      className="w-20 h-12 bg-black rounded overflow-hidden cursor-pointer hover:opacity-80 transition"
+      onClick={onClick}
+    >
+      {isLoading ? (
+        <div className="w-full h-full flex items-center justify-center">
+          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : urls?.preview_thumbnail_url ? (
+        <Image
+          src={urls.preview_thumbnail_url}
+          alt={project.name}
+          width={80}
+          height={48}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-white text-xs">
+          No preview
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Preview Modal Component
+ * Shows preview video with download button
+ */
+function PreviewModal({
+  project,
+  isOpen,
+  onClose,
+  onDownload,
+  mounted,
+}: {
+  project: Project;
+  isOpen: boolean;
+  onClose: () => void;
+  onDownload: () => void;
+  mounted: boolean;
+}) {
+  const { data: urls, isLoading } = useProjectUrls(project.id);
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    // Use consistent UTC-based formatting to avoid hydration errors
+    const year = date.getUTCFullYear();
+    const month = date.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+    const day = date.getUTCDate();
+    const hours = date.getUTCHours().toString().padStart(2, "0");
+    const minutes = date.getUTCMinutes().toString().padStart(2, "0");
+    return `${month} ${day}, ${year} ${hours}:${minutes}`;
+  };
+
+  const getTimeUntilExpiration = (expiresAt: string | undefined) => {
+    if (!expiresAt || !mounted) return null;
+
+    const now = new Date().getTime();
+    const expiration = new Date(expiresAt).getTime();
+    const diff = expiration - now;
+
+    if (diff <= 0) return "Expired";
+
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+    if (hours > 0) {
+      return `Expires in ${hours}h ${minutes}m`;
+    } else {
+      return `Expires in ${minutes}m`;
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} size="5xl" scrollBehavior="inside">
+      <ModalContent>
+        <ModalHeader>{project.name}</ModalHeader>
+        <ModalBody>
+          {isLoading ? (
+            <div className="flex items-center justify-center min-h-[400px]">
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                <p className="text-default-500">Loading preview...</p>
+              </div>
+            </div>
+          ) : urls?.preview_video_url ? (
+            <video
+              controls
+              className="w-full max-h-[70vh] object-contain bg-black rounded-lg"
+              src={urls.preview_video_url}
+              autoPlay
+            >
+              Your browser does not support video playback.
+            </video>
+          ) : (
+            <div className="flex items-center justify-center min-h-[400px]">
+              <p className="text-default-500">No preview available</p>
+            </div>
+          )}
+
+          {/* Project Info */}
+          <div className="mt-4 space-y-2">
+            {project.description && (
+              <p className="text-sm text-default-600">{project.description}</p>
+            )}
+            <div className="flex gap-4 text-sm text-default-500">
+              <span>{project.video_count} videos</span>
+              <span>•</span>
+              <span>{formatFileSize(project.total_size_bytes)}</span>
+              <span>•</span>
+              <span>Created {formatDate(project.created_at)}</span>
+            </div>
+            {mounted && project.expires_at && getTimeUntilExpiration(project.expires_at) && (
+              <p className="text-sm text-warning">
+                {getTimeUntilExpiration(project.expires_at)}
+              </p>
+            )}
+          </div>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="light" onPress={onClose}>
+            Close
+          </Button>
+          <Button
+            color="primary"
+            onPress={onDownload}
+            isDisabled={!project.zip_url}
+          >
+            Download ZIP
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }
