@@ -23,35 +23,37 @@ router = APIRouter(prefix="/processing", tags=["processing"])
 
 
 @router.post("/list-videos", response_model=VideoListResponse)
-def list_videos(
+async def list_videos(
     request: VideoListRequest,
     current_user: dict = Depends(get_current_user),
     processing_service: ProcessingService = Depends(get_processing_service),
 ) -> VideoListResponse:
     """
-    List all video files in a folder.
+    List all video files in an S3 folder.
 
     Requires authentication.
 
-    - **folder_path**: Absolute path to video folder
+    - **folder_path**: Subfolder name in S3 (e.g., "My Videos") or None for root folder
     """
-    return processing_service.list_videos_in_folder(request.folder_path)
+    user_id = current_user["id"]
+    return await processing_service.list_videos_in_folder(request.folder_path, user_id)
 
 
 @router.post("/list-audios", response_model=AudioListResponse)
-def list_audios(
+async def list_audios(
     request: AudioListRequest,
     current_user: dict = Depends(get_current_user),
     processing_service: ProcessingService = Depends(get_processing_service),
 ) -> AudioListResponse:
     """
-    List all audio files in a folder.
+    List all audio files in an S3 folder.
 
     Requires authentication.
 
-    - **folder_path**: Absolute path to audio folder
+    - **folder_path**: Subfolder name in S3 (e.g., "My Music") or None for root folder
     """
-    return processing_service.list_audios_in_folder(request.folder_path)
+    user_id = current_user["id"]
+    return await processing_service.list_audios_in_folder(request.folder_path, user_id)
 
 
 @router.get("/default-config", response_model=ProcessingConfig)
@@ -131,8 +133,15 @@ async def process_batch_videos(
     - **unique_amount**: Number of unique combinations (if unique_mode=True)
     - **config**: Processing configuration (optional)
     """
+    user_id = current_user["id"]
+    
+    # Validate project_name is provided
+    if not request.project_name or not request.project_name.strip():
+        from core.exceptions import ValidationError
+        raise ValidationError("Project name is required")
+    
     # Quick validation
-    vids_response = processing_service.list_videos_in_folder(request.video_folder)
+    vids_response = await processing_service.list_videos_in_folder(request.video_folder, user_id)
     if vids_response.count == 0:
         from core.exceptions import ValidationError
 
@@ -140,7 +149,7 @@ async def process_batch_videos(
 
     auds_count = 0
     if request.audio_folder:
-        auds_response = processing_service.list_audios_in_folder(request.audio_folder)
+        auds_response = await processing_service.list_audios_in_folder(request.audio_folder, user_id)
         auds_count = auds_response.count
 
     rows_count = len(request.text_combinations) if request.text_combinations else 1
@@ -164,6 +173,7 @@ async def process_batch_videos(
         request.audio_folder,
         request.text_combinations,
         request.output_folder,
+        request.project_name,
         request.unique_mode,
         request.unique_amount,
         request.config,

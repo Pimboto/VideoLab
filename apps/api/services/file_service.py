@@ -737,17 +737,20 @@ class FileService:
             files_list = []
             for s3_file in s3_files:
                 # Extract filename from S3 key
-                # Format: users/{user_id}/output/{job_id}/{filename}.mp4
-                key = s3_file['Key']
+                # Format: users/{user_id}/output/{project_name}/{filename}.mp4
+                key = s3_file.get('key', '') or s3_file.get('Key', '')  # Handle both cases
+                if not key:
+                    continue
+                    
                 filename = key.split('/')[-1]
 
-                # Extract job_id (folder name in S3)
+                # Extract project_name (folder name in S3)
                 key_parts = key.split('/')
-                job_id = key_parts[3] if len(key_parts) > 3 else ""
+                project_name = key_parts[3] if len(key_parts) > 3 else ""
 
                 # Get file metadata from S3
-                size_bytes = s3_file.get('Size', 0)
-                last_modified = s3_file.get('LastModified')
+                size_bytes = s3_file.get('size', 0) or s3_file.get('Size', 0)
+                last_modified = s3_file.get('last_modified') or s3_file.get('LastModified')
 
                 # Convert datetime to ISO string
                 if last_modified:
@@ -765,7 +768,7 @@ class FileService:
                     "size_bytes": size_bytes,  # For compatibility
                     "modified": modified_str,
                     "file_type": "output",
-                    "folder": job_id,  # Job ID as folder
+                    "folder": project_name,  # Project name as folder
                     "metadata": {
                         "storage_type": "s3",
                         "temporary": True,

@@ -34,17 +34,20 @@ export interface ProcessingConfig {
 }
 
 export interface ProcessingRequest {
-  video_files: string[];
-  audio_files: string[];
-  csv_file: string;
+  video_folder: string;
+  audio_folder: string | null;
+  text_combinations: string[][];
   output_folder: string;
-  num_videos: number;
-  num_audios: number;
+  project_name: string;
   unique_mode: boolean;
-  unique_amount: number;
-  mode: string;
-  text_position: string;
-  preset_name: string;
+  unique_amount: number | null;
+  config?: {
+    text_position?: string;
+    preset_name?: string;
+    mode?: string;
+    num_videos?: number;
+    num_audios?: number;
+  };
 }
 
 export interface ProcessingResponse {

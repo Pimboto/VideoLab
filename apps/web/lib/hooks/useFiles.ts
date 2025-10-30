@@ -8,10 +8,12 @@ import { apiClient, API_ENDPOINTS } from "@/lib/api/client";
 
 export interface FileItem {
   filename: string;
-  size_mb: number;
-  size_bytes: number;
-  created_at: string;
-  mime_type?: string;
+  filepath: string;
+  size: number;
+  size_bytes?: number;
+  modified: string;
+  file_type: string;
+  metadata?: Record<string, any>;
 }
 
 export interface FileListResponse {

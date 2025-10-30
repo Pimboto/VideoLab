@@ -31,7 +31,7 @@ interface JobStatus {
   status: string;
   progress: number;
   message: string;
-  output_files: string[];
+  output_files?: string[];
 }
 
 export default function CreatePage() {
@@ -39,7 +39,7 @@ export default function CreatePage() {
   const router = useRouter();
   const { listFiles, getCsvPreviewUrl, getVideoStreamUrl } = useFiles();
   const { listFolders } = useFolders();
-  const { startBatchProcessing } = useProcessing();
+  const { processBatch } = useProcessing();
   const { pollJobStatus } = useJobs();
   const toast = useToast();
 
@@ -50,6 +50,7 @@ export default function CreatePage() {
   const [selectedVideoFolder, setSelectedVideoFolder] = useState("");
   const [selectedAudioFolder, setSelectedAudioFolder] = useState("");
   const [selectedCSV, setSelectedCSV] = useState("");
+  const [projectName, setProjectName] = useState("");
   const [previewVideoSrc, setPreviewVideoSrc] = useState("");
 
   const [position, setPosition] = useState("center");
@@ -105,7 +106,7 @@ export default function CreatePage() {
       }
 
       if (cData) {
-        setCSVFiles(cData.files as unknown as CSVFile[] || []);
+        setCSVFiles(cData.files || []);
         if (cData.files?.length) setSelectedCSV(cData.files[0].filepath);
       }
     } catch (error) {
@@ -119,11 +120,25 @@ export default function CreatePage() {
       const folderName = videoFolders.find((f) => f.path === folderPath)?.name;
       if (!folderName) return;
 
-      const data = await listFiles("videos");
+      // List videos in the selected folder only
+      const data = await listFiles("videos", folderName);
 
       if (data && data.files && data.files.length > 0) {
         const firstVideo = data.files[0];
-        setPreviewVideoSrc(getVideoStreamUrl(firstVideo.filepath));
+
+        // Check if video has a thumbnail in metadata
+        const thumbnailUrl = firstVideo.metadata?.thumbnail_url;
+
+        if (thumbnailUrl) {
+          // Use thumbnail for preview (better performance)
+          setPreviewVideoSrc(thumbnailUrl);
+        } else {
+          // Fallback to video stream if no thumbnail
+          const streamUrl = await getVideoStreamUrl(firstVideo.filepath);
+          if (streamUrl) {
+            setPreviewVideoSrc(streamUrl);
+          }
+        }
       }
     } catch (error) {
       console.error("Error loading preview video:", error);
@@ -134,7 +149,13 @@ export default function CreatePage() {
     try {
       const data = await pollJobStatus(jobId);
       if (data) {
-        setJobStatus(data);
+        setJobStatus({
+          job_id: data.job_id,
+          status: data.status,
+          progress: data.progress,
+          message: data.message,
+          output_files: data.output_files || [],
+        });
 
         if (data.status === "completed" || data.status === "failed") {
           setProcessing(false);
@@ -149,6 +170,11 @@ export default function CreatePage() {
   const handleStartBatch = async () => {
     if (!selectedVideoFolder || !selectedAudioFolder || !selectedCSV) {
       toast.error("Please select video folder, audio folder, and CSV file");
+      return;
+    }
+
+    if (!projectName || !projectName.trim()) {
+      toast.error("Please enter a project name");
       return;
     }
 
@@ -178,17 +204,20 @@ export default function CreatePage() {
       const combinations = csvData.combinations || [];
 
       // Start batch processing
-      const result = await startBatchProcessing({
-        videoFolder: selectedVideoFolder,
-        audioFolder: selectedAudioFolder,
-        textCombinations: combinations,
-        outputFolder: "D:/Work/video/output",
-        uniqueMode,
-        uniqueAmount: parseInt(uniqueAmount),
+      const result = await processBatch({
+        video_folder: selectedVideoFolder,
+        audio_folder: selectedAudioFolder,
+        text_combinations: combinations,
+        output_folder: "D:/Work/video/output",
+        project_name: projectName.trim(),
+        unique_mode: uniqueMode,
+        unique_amount: parseInt(uniqueAmount),
         config: {
-          position,
-          preset,
-          fitMode,
+          text_position: position,
+          preset_name: preset,
+          mode: fitMode,
+          num_videos: 0,  // Will be calculated by backend
+          num_audios: 0,  // Will be calculated by backend
         },
       });
 
@@ -432,7 +461,7 @@ export default function CreatePage() {
                       {jobStatus.message}
                     </p>
 
-                    {jobStatus.output_files.length > 0 && (
+                    {jobStatus && jobStatus.output_files && jobStatus.output_files.length > 0 && (
                       <div>
                         <p className="text-xs font-semibold mb-1">
                           Output Files ({jobStatus.output_files.length}):
@@ -475,7 +504,13 @@ export default function CreatePage() {
             <Divider />
             <CardBody className="">
               <Input
-                placeholder="Cute Dog Channel "
+                placeholder="Cute Dog Channel"
+                value={projectName}
+                onValueChange={setProjectName}
+                isRequired
+                isInvalid={!projectName.trim()}
+                errorMessage={!projectName.trim() ? "Project name is required" : ""}
+                size="sm"
               />
             </CardBody>
           </Card>
@@ -488,7 +523,7 @@ export default function CreatePage() {
             onPress={handleStartBatch}
             isLoading={processing}
             isDisabled={
-              !selectedVideoFolder || !selectedAudioFolder || !selectedCSV
+              !selectedVideoFolder || !selectedAudioFolder || !selectedCSV || !projectName.trim()
             }
           >
             Start Batch Processing
@@ -504,15 +539,24 @@ export default function CreatePage() {
             <Divider />
             <CardBody>
               <div className="relative aspect-[9/16] max-h-[75vh] bg-gradient-to-br from-gray-900 to-gray-800 rounded-lg overflow-hidden shadow-lg">
-                {/* Video background */}
+                {/* Video or thumbnail background */}
                 {previewVideoSrc ? (
-                  <video
-                    className={`absolute inset-0 w-full h-full ${getFitModeStyle()}`}
-                    src={`${previewVideoSrc}#t=0.1`}
-                    preload="metadata"
-                    muted
-                    playsInline
-                  />
+                  // Check if it's an image (thumbnail) or video
+                  previewVideoSrc.includes('/thumbnails/') || previewVideoSrc.endsWith('.jpg') || previewVideoSrc.endsWith('.webp') ? (
+                    <img
+                      className={`absolute inset-0 w-full h-full ${getFitModeStyle()}`}
+                      src={previewVideoSrc}
+                      alt="Video preview"
+                    />
+                  ) : (
+                    <video
+                      className={`absolute inset-0 w-full h-full ${getFitModeStyle()}`}
+                      src={`${previewVideoSrc}#t=0.1`}
+                      preload="metadata"
+                      muted
+                      playsInline
+                    />
+                  )
                 ) : (
                   <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-orange-500/20">
                     <div className="absolute inset-0 opacity-20">

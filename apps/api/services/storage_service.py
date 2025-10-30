@@ -271,7 +271,7 @@ class StorageService:
     async def upload_output_file(
         self,
         user_id: str,
-        job_id: str,
+        project_name: str,
         filename: str,
         file_content: bytes,
         content_type: str = "video/mp4"
@@ -283,7 +283,7 @@ class StorageService:
 
         Args:
             user_id: User ID
-            job_id: Processing job ID (used for folder organization)
+            project_name: Project name (used for folder organization)
             filename: Output filename
             file_content: File content as bytes
             content_type: MIME type
@@ -295,8 +295,11 @@ class StorageService:
             StorageError: If upload fails
         """
         try:
-            # Build storage path: users/{user_id}/output/{job_id}/{filename}
-            storage_path = f"users/{user_id}/output/{job_id}/{filename}"
+            # Sanitize project name for S3 (remove invalid characters)
+            safe_project_name = self.sanitize_folder_name(project_name)
+            
+            # Build storage path: users/{user_id}/output/{project_name}/{filename}
+            storage_path = f"users/{user_id}/output/{safe_project_name}/{filename}"
             file_size = len(file_content)
 
             # Upload to S3 with temporary tag
@@ -307,7 +310,7 @@ class StorageService:
                 tags={"purpose": "temporary"},  # For lifecycle rule
                 content_type=content_type,
                 metadata={
-                    "job_id": job_id,
+                    "project_name": project_name,
                     "user_id": user_id,
                     "original_filename": filename
                 }
@@ -315,7 +318,7 @@ class StorageService:
 
             logger.info(
                 f"Output file uploaded with temporary tag: {storage_path}",
-                extra={"user_id": user_id, "job_id": job_id, "size": file_size}
+                extra={"user_id": user_id, "project_name": project_name, "size": file_size}
             )
 
             return storage_path, file_size

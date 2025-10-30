@@ -183,6 +183,16 @@ export function useJobs() {
   );
 
   /**
+   * Poll job status (alias for getJobStatus for compatibility)
+   */
+  const pollJobStatus = useCallback(
+    async (jobId: string): Promise<Job | null> => {
+      return getJobStatus(jobId);
+    },
+    [getJobStatus]
+  );
+
+  /**
    * Cleanup polling on unmount
    */
   useEffect(() => {
@@ -197,6 +207,7 @@ export function useJobs() {
     error,
     fetchJobs,
     getJobStatus,
+    pollJobStatus, // Add pollJobStatus for compatibility
     deleteJob,
     startPolling,
     stopPolling,

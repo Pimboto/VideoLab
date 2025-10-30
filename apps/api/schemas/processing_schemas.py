@@ -62,15 +62,19 @@ class ProcessingConfig(BaseModel):
 
 
 class VideoListRequest(BaseModel):
-    """Request to list videos in a folder"""
+    """Request to list videos in an S3 folder"""
 
-    folder_path: str = Field(..., description="Absolute path to video folder")
+    folder_path: str = Field(
+        ..., description="Subfolder name in S3 (e.g., 'My Videos') or empty string for root folder"
+    )
 
 
 class AudioListRequest(BaseModel):
-    """Request to list audios in a folder"""
+    """Request to list audios in an S3 folder"""
 
-    folder_path: str = Field(..., description="Absolute path to audio folder")
+    folder_path: str = Field(
+        ..., description="Subfolder name in S3 (e.g., 'My Music') or empty string for root folder"
+    )
 
 
 class VideoListResponse(BaseModel):
@@ -120,6 +124,7 @@ class BatchProcessRequest(BaseModel):
         default_factory=list, description="List of text combinations"
     )
     output_folder: str = Field(..., description="Output folder for processed videos")
+    project_name: str = Field(..., description="Project name for organizing output files")
     unique_mode: bool = Field(
         default=False, description="Use deterministic unique selection"
     )
