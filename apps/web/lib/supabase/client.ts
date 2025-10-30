@@ -1,5 +1,6 @@
-import { createBrowserClient } from "@supabase/ssr";
 import type { Database } from "./types";
+
+import { createBrowserClient } from "@supabase/ssr";
 
 /**
  * Create a Supabase client for use in the browser
@@ -11,7 +12,7 @@ export function createClient() {
 
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
-      "Missing Supabase environment variables. Please check your .env.local file."
+      "Missing Supabase environment variables. Please check your .env.local file.",
     );
   }
 

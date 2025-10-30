@@ -337,6 +337,6 @@ export const QuestionIcon = (props: IconSvgProps) => (
       strokeLinejoin="round"
       strokeWidth="2"
     />
-    <circle cx="12" cy="18" r="0.5" fill="currentColor" strokeWidth="2" />
+    <circle cx="12" cy="18" fill="currentColor" r="0.5" strokeWidth="2" />
   </svg>
 );

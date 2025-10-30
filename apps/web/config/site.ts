@@ -2,7 +2,8 @@ export type SiteConfig = typeof siteConfig;
 
 export const siteConfig = {
   name: "VideoLab",
-  description: "Make beautiful videos websites regardless of your design experience.",
+  description:
+    "Make beautiful videos websites regardless of your design experience.",
   navItems: [
     {
       label: "Home",

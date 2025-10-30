@@ -1,6 +1,5 @@
 import "@/styles/globals.css";
 import { Metadata, Viewport } from "next";
-import { Link } from "@heroui/link";
 import clsx from "clsx";
 import { ClerkProvider } from "@clerk/nextjs";
 
@@ -8,7 +7,6 @@ import { Providers } from "./providers";
 
 import { siteConfig } from "@/config/site";
 import { fontSans, fontRoboto, fontInter } from "@/config/fonts";
-import { Navbar } from "@/components/navbar";
 
 export const metadata: Metadata = {
   title: {
@@ -42,7 +40,7 @@ export default function RootLayout({
             "min-h-screen text-foreground bg-background font-sans antialiased",
             fontSans.variable,
             fontRoboto.variable,
-            fontInter.variable
+            fontInter.variable,
           )}
         >
           <Providers themeProps={{ attribute: "class", defaultTheme: "dark" }}>

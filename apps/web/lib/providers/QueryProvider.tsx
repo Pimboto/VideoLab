@@ -36,7 +36,8 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
 
             // Retry Configuration
             retry: 1, // Retry failed queries once
-            retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
+            retryDelay: (attemptIndex) =>
+              Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
 
             // Network Mode
             networkMode: "online", // Only run queries when online
@@ -47,7 +48,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
             networkMode: "online",
           },
         },
-      })
+      }),
   );
 
   return (
@@ -56,9 +57,9 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
       {/* DevTools only shown in development */}
       {process.env.NODE_ENV === "development" && (
         <ReactQueryDevtools
+          buttonPosition="bottom-left"
           initialIsOpen={false}
           position="bottom"
-          buttonPosition="bottom-left"
         />
       )}
     </QueryClientProvider>

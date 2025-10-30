@@ -7,23 +7,17 @@ export default function Footer() {
     <footer className="w-full flex items-center justify-center py-6 border-t border-divider">
       <div className="flex items-center gap-1 text-default-600">
         <span>Powered by</span>
-        <Link
-          href="https://heroui.com"
-          className="text-primary font-semibold"
-        >
+        <Link className="text-primary font-semibold" href="https://heroui.com">
           HeroUI
         </Link>
         <span>+</span>
-        <Link
-          href="https://nextjs.org"
-          className="text-primary font-semibold"
-        >
+        <Link className="text-primary font-semibold" href="https://nextjs.org">
           Next.js
         </Link>
         <span>+</span>
         <Link
-          href="https://fastapi.tiangolo.com"
           className="text-primary font-semibold"
+          href="https://fastapi.tiangolo.com"
         >
           FastAPI
         </Link>
@@ -31,4 +25,3 @@ export default function Footer() {
     </footer>
   );
 }
-

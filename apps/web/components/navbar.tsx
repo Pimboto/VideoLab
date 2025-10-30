@@ -8,16 +8,11 @@ import { Button } from "@heroui/button";
 import { Link } from "@heroui/link";
 import NextLink from "next/link";
 import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
+import Image from "next/image";
 
 import { siteConfig } from "@/config/site";
 import { ThemeSwitch } from "@/components/theme-switch";
-import {
-  TwitterIcon,
-  GithubIcon,
-  DiscordIcon,
-  Logo,
-} from "@/components/icons";
-import Image from "next/image";
+import { TwitterIcon, GithubIcon, DiscordIcon } from "@/components/icons";
 
 export const Navbar = () => {
   return (
@@ -25,18 +20,18 @@ export const Navbar = () => {
       <NavbarContent className="basis-1/5 sm:basis-full" justify="start">
         <NavbarBrand as="li" className="gap-3 max-w-fit">
           <NextLink className="flex justify-start items-center gap-1" href="/">
-          <Image
-              src="/videolab-logo.png"
+            <Image
               alt="VideoLab"
-              width={40}
-              height={40}
               className="object-cover"
+              height={40}
+              src="/videolab-logo.png"
+              width={40}
             />
             <p className="font-bold text-inherit">VideoLab</p>
           </NextLink>
         </NavbarBrand>
         <ul className="hidden lg:flex gap-4 justify-start ml-2">
-{/*           <NavbarItem>
+          {/*           <NavbarItem>
             <NextLink
               className="text-foreground hover:text-primary transition-colors"
               href="/"
@@ -63,7 +58,7 @@ export const Navbar = () => {
           </Link>
           <ThemeSwitch />
         </NavbarItem>
-        
+
         {/* Mostrar botones según estado de autenticación */}
         <SignedOut>
           <NavbarItem className="hidden md:flex gap-2">
@@ -86,7 +81,7 @@ export const Navbar = () => {
             </Button>
           </NavbarItem>
         </SignedOut>
-        
+
         <SignedIn>
           <NavbarItem className="hidden md:flex gap-3">
             <Button
@@ -98,11 +93,11 @@ export const Navbar = () => {
             >
               Dashboard
             </Button>
-            <UserButton 
+            <UserButton
               appearance={{
                 elements: {
-                  avatarBox: "w-9 h-9"
-                }
+                  avatarBox: "w-9 h-9",
+                },
               }}
             />
           </NavbarItem>

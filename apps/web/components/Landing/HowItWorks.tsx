@@ -7,32 +7,30 @@ export default function HowItWorks() {
     {
       number: "01",
       title: "Upload Your Files",
-      description: "Videos, audios and CSV files with your texts"
+      description: "Videos, audios and CSV files with your texts",
     },
     {
-      number: "02", 
+      number: "02",
       title: "Configure Processing",
-      description: "Choose position, style and rendering parameters"
+      description: "Choose position, style and rendering parameters",
     },
     {
       number: "03",
       title: "Start Batch",
-      description: "Process multiple combinations automatically"
+      description: "Process multiple combinations automatically",
     },
     {
       number: "04",
       title: "Download Results",
-      description: "Get your processed videos ready to use"
-    }
+      description: "Get your processed videos ready to use",
+    },
   ];
 
   return (
     <section className="py-16">
       <div className="container mx-auto max-w-7xl px-6">
         <div className="text-center mb-12">
-          <h2 className={title({ size: "md" })}>
-            How It Works
-          </h2>
+          <h2 className={title({ size: "md" })}>How It Works</h2>
           <p className={subtitle({ class: "mt-4 max-w-2xl mx-auto" })}>
             Simple 4-step process to get professional results
           </p>
@@ -46,12 +44,8 @@ export default function HowItWorks() {
                   {step.number}
                 </span>
               </div>
-              <h3 className="text-lg font-semibold mb-2">
-                {step.title}
-              </h3>
-              <p className="text-default-600 text-sm">
-                {step.description}
-              </p>
+              <h3 className="text-lg font-semibold mb-2">{step.title}</h3>
+              <p className="text-default-600 text-sm">{step.description}</p>
             </div>
           ))}
         </div>

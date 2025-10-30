@@ -10,45 +10,49 @@ import {
 } from "@heroicons/react/24/outline";
 import { SignedIn, SignedOut } from "@clerk/nextjs";
 
-import { siteConfig } from "@/config/site";
-import { title, subtitle } from "@/components/primitives";
 import DarkVeil from "./DarkVeil";
 import BlurText from "./BlurText";
-import { useTheme } from "next-themes";
+
+import { siteConfig } from "@/config/site";
+import { title, subtitle } from "@/components/primitives";
 
 export default function Hero() {
-  const { theme } = useTheme();
-  const isLight = theme === "light";
-
   return (
     <div className="relative min-h-screen overflow-hidden">
       {/* Fondo DarkVeil */}
       <div className="absolute inset-0 z-0">
-        <div className="w-full h-full relative" >
-          <DarkVeil speed={1.6} hueShift={0} noiseIntensity={0} scanlineFrequency={5} scanlineIntensity={0.04} warpAmount={5} />
+        <div className="w-full h-full relative">
+          <DarkVeil
+            hueShift={0}
+            noiseIntensity={0}
+            scanlineFrequency={5}
+            scanlineIntensity={0.04}
+            speed={1.6}
+            warpAmount={5}
+          />
         </div>
         <div className="absolute inset-0 bg-gradient-to-br from-background/50 via-background/30 to-background/60" />
       </div>
 
       {/* Contenido Hero */}
-    <div className="relative z-10 flex flex-col items-center justify-center text-center py-16 md:py-24 min-h-screen">
+      <div className="relative z-10 flex flex-col items-center justify-center text-center py-16 md:py-24 min-h-screen">
         <div className="max-w-4xl mx-auto px-6">
           <div className="flex justify-center mb-6">
             <Chip
               color="primary"
-              variant="flat"
               startContent={<CheckCircleIcon className="w-4 h-4" />}
+              variant="flat"
             >
               Video Repurpose Tool
             </Chip>
           </div>
 
           <BlurText
-            text="Create Different Videos from One Source"
-            delay={100}
             animateBy="words"
-            direction="top"
             className={title({ size: "lg" })}
+            delay={100}
+            direction="top"
+            text="Create Different Videos from One Source"
           />
 
           <p className={subtitle({ class: "mt-6 text-lg max-w-2xl mx-auto" })}>
@@ -62,43 +66,43 @@ export default function Hero() {
             <SignedOut>
               <Button
                 as={Link}
-                href="/sign-up"
-                color="primary"
-                size="lg"
                 className="font-semibold"
+                color="primary"
                 endContent={<ArrowRightIcon className="w-4 h-4" />}
+                href="/sign-up"
+                size="lg"
               >
                 Get Started Free
               </Button>
               <Button
                 as={Link}
-                href="/sign-in"
-                variant="bordered"
-                size="lg"
                 className="font-semibold"
+                href="/sign-in"
+                size="lg"
+                variant="bordered"
               >
                 Sign In
               </Button>
             </SignedOut>
-            
+
             <SignedIn>
               <Button
                 as={Link}
-                href="/dashboard"
-                color="primary"
-                size="lg"
                 className="font-semibold"
+                color="primary"
                 endContent={<ArrowRightIcon className="w-4 h-4" />}
+                href="/dashboard"
+                size="lg"
               >
                 Go to Dashboard
               </Button>
               <Button
                 as={Link}
-                href={siteConfig.links.github}
-                variant="bordered"
-                size="lg"
                 className="font-semibold"
+                href={siteConfig.links.github}
+                size="lg"
                 startContent={<PlayIcon className="w-4 h-4" />}
+                variant="bordered"
               >
                 View Documentation
               </Button>

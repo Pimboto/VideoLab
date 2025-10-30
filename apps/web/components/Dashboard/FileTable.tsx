@@ -1,12 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
-import { Button } from "@heroui/button";
-import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
 import type { Selection } from "@heroui/table";
-import { formatFileSize, formatDate } from "@/lib/utils";
 import type { BaseFile } from "@/lib/types";
+
+import { useState, useEffect } from "react";
+import {
+  Table,
+  TableHeader,
+  TableColumn,
+  TableBody,
+  TableRow,
+  TableCell,
+} from "@heroui/table";
+import { Button } from "@heroui/button";
+import {
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
+  DropdownItem,
+} from "@heroui/dropdown";
+
+import { formatFileSize, formatDate } from "@/lib/utils";
 
 export interface Column {
   key: string;
@@ -17,7 +31,13 @@ export interface Column {
 export interface RowAction {
   label: string;
   onClick: (file: BaseFile) => void;
-  color?: "default" | "primary" | "secondary" | "success" | "warning" | "danger";
+  color?:
+    | "default"
+    | "primary"
+    | "secondary"
+    | "success"
+    | "warning"
+    | "danger";
   icon?: React.ReactNode;
 }
 
@@ -45,7 +65,7 @@ export default function FileTable({
   emptyMessage = "No files found",
   renderCell,
   primaryAction,
-  rowActions = []
+  rowActions = [],
 }: FileTableProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -55,26 +75,44 @@ export default function FileTable({
 
   // Get display name from metadata if available, otherwise use filename
   const getDisplayName = (file: BaseFile): string => {
-    if (file.metadata && typeof file.metadata === 'object' && 'original_filename' in file.metadata) {
-      return (file.metadata as any).original_filename;
+    if (
+      (file as any).metadata &&
+      typeof (file as any).metadata === "object" &&
+      "original_filename" in (file as any).metadata
+    ) {
+      return (file as any).metadata.original_filename;
     }
+
     return file.filename;
   };
 
-  const defaultRenderCell = (file: BaseFile, columnKey: string): React.ReactNode => {
+  const defaultRenderCell = (
+    file: BaseFile,
+    columnKey: string,
+  ): React.ReactNode => {
     switch (columnKey) {
       case "filename":
       case "name":
         return (
           <div className="max-w-xs">
-            <p className="text-sm font-medium truncate">{getDisplayName(file)}</p>
+            <p className="text-sm font-medium truncate">
+              {getDisplayName(file)}
+            </p>
           </div>
         );
       case "size":
-        return <p className="text-sm text-default-500">{formatFileSize(file.size)}</p>;
+        return (
+          <p className="text-sm text-default-500">
+            {formatFileSize(file.size)}
+          </p>
+        );
       case "modified":
       case "date":
-        return <p className="text-sm text-default-500">{formatDate(file.modified)}</p>;
+        return (
+          <p className="text-sm text-default-500">
+            {formatDate(file.modified)}
+          </p>
+        );
       case "actions":
         return (
           <div className="flex gap-2">
@@ -98,10 +136,10 @@ export default function FileTable({
                   {rowActions.map((action, idx) => (
                     <DropdownItem
                       key={idx}
-                      onPress={() => action.onClick(file)}
-                      color={action.color}
                       className={action.color === "danger" ? "text-danger" : ""}
+                      color={action.color}
                       startContent={action.icon}
+                      onPress={() => action.onClick(file)}
                     >
                       {action.label}
                     </DropdownItem>
@@ -127,23 +165,19 @@ export default function FileTable({
   return (
     <Table
       aria-label="Files table"
-      selectionMode="multiple"
-      selectedKeys={selectedKeys}
-      onSelectionChange={onSelectionChange}
       classNames={{
         wrapper: "min-h-[400px]",
       }}
+      selectedKeys={selectedKeys}
+      selectionMode="multiple"
+      onSelectionChange={onSelectionChange}
     >
       <TableHeader columns={columns}>
-        {(column) => (
-          <TableColumn key={column.key}>
-            {column.label}
-          </TableColumn>
-        )}
+        {(column) => <TableColumn key={column.key}>{column.label}</TableColumn>}
       </TableHeader>
       <TableBody
-        items={files}
         emptyContent={loading ? "Loading..." : emptyMessage}
+        items={files}
       >
         {(file) => (
           <TableRow key={file.filepath}>

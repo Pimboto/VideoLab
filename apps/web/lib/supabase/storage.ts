@@ -15,7 +15,7 @@ export async function uploadFile(
   bucket: StorageBucket,
   userId: string,
   file: File,
-  subfolder?: string
+  subfolder?: string,
 ): Promise<{ path: string; url: string }> {
   // Construct the file path: {userId}/{subfolder?}/{filename}
   const path = subfolder
@@ -53,7 +53,7 @@ export async function uploadFile(
  */
 export async function downloadFile(
   bucket: StorageBucket,
-  path: string
+  path: string,
 ): Promise<Blob> {
   const { data, error } = await supabase.storage.from(bucket).download(path);
 
@@ -72,7 +72,7 @@ export async function downloadFile(
  */
 export async function deleteFile(
   bucket: StorageBucket,
-  path: string
+  path: string,
 ): Promise<void> {
   const { error } = await supabase.storage.from(bucket).remove([path]);
 
@@ -90,7 +90,7 @@ export async function deleteFile(
  */
 export async function listFiles(
   bucket: StorageBucket,
-  path: string = ""
+  path: string = "",
 ): Promise<any[]> {
   const { data, error } = await supabase.storage.from(bucket).list(path, {
     limit: 100,
@@ -116,7 +116,7 @@ export async function listFiles(
 export async function getSignedUrl(
   bucket: StorageBucket,
   path: string,
-  expiresIn: number = 3600
+  expiresIn: number = 3600,
 ): Promise<string> {
   const { data, error } = await supabase.storage
     .from(bucket)
@@ -160,7 +160,7 @@ export async function uploadFileWithProgress(
   userId: string,
   file: File,
   onProgress?: (progress: number) => void,
-  subfolder?: string
+  subfolder?: string,
 ): Promise<{ path: string; url: string }> {
   const path = subfolder
     ? `${userId}/${subfolder}/${file.name}`
@@ -168,6 +168,7 @@ export async function uploadFileWithProgress(
 
   // Create a FormData object for chunked upload
   const formData = new FormData();
+
   formData.append("file", file);
 
   return new Promise((resolve, reject) => {
@@ -178,6 +179,7 @@ export async function uploadFileWithProgress(
       xhr.upload.addEventListener("progress", (e) => {
         if (e.lengthComputable) {
           const progress = (e.loaded / e.total) * 100;
+
           onProgress(progress);
         }
       });
@@ -214,6 +216,7 @@ export async function uploadFileWithProgress(
           const {
             data: { publicUrl },
           } = supabase.storage.from(bucket).getPublicUrl(path);
+
           resolve({ path: data.path, url: publicUrl });
         }
       })

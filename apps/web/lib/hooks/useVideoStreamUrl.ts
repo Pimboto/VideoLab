@@ -30,6 +30,7 @@ export function useVideoStreamUrl(filepath: string | null) {
       if (!filepath) return null;
 
       const token = await getToken();
+
       if (!token) return null;
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -44,6 +45,7 @@ export function useVideoStreamUrl(filepath: string | null) {
       if (!response.ok) return null;
 
       const data = await response.json();
+
       return data.url as string;
     },
     enabled: !!filepath, // Only run if filepath exists
@@ -70,9 +72,11 @@ export function useVideoStreamUrls(filepaths: string[]) {
       queryKey: ["video-stream-url", filepath],
       queryFn: async () => {
         const token = await getToken();
+
         if (!token) return null;
 
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const apiUrl =
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
         const endpoint = `/api/video-processor/files/stream-url/video?filepath=${encodeURIComponent(filepath)}`;
 
         const response = await fetch(`${apiUrl}${endpoint}`, {
@@ -84,6 +88,7 @@ export function useVideoStreamUrls(filepaths: string[]) {
         if (!response.ok) return null;
 
         const data = await response.json();
+
         return data.url as string;
       },
       staleTime: 60 * 60 * 1000, // 1 hour
@@ -94,6 +99,7 @@ export function useVideoStreamUrls(filepaths: string[]) {
 
   // Convert results to a Map for easy lookup
   const urls: Record<string, string | null> = {};
+
   queries.forEach((query, index) => {
     urls[filepaths[index]] = query.data || null;
   });
@@ -121,6 +127,7 @@ export function useAudioStreamUrl(filepath: string | null) {
       if (!filepath) return null;
 
       const token = await getToken();
+
       if (!token) return null;
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -135,6 +142,7 @@ export function useAudioStreamUrl(filepath: string | null) {
       if (!response.ok) return null;
 
       const data = await response.json();
+
       return data.url as string;
     },
     enabled: !!filepath,
@@ -159,9 +167,11 @@ export function useAudioStreamUrls(filepaths: string[]) {
       queryKey: ["audio-stream-url", filepath],
       queryFn: async () => {
         const token = await getToken();
+
         if (!token) return null;
 
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const apiUrl =
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
         const endpoint = `/api/video-processor/files/stream-url/audio?filepath=${encodeURIComponent(filepath)}`;
 
         const response = await fetch(`${apiUrl}${endpoint}`, {
@@ -173,6 +183,7 @@ export function useAudioStreamUrls(filepaths: string[]) {
         if (!response.ok) return null;
 
         const data = await response.json();
+
         return data.url as string;
       },
       staleTime: 60 * 60 * 1000, // 1 hour
@@ -183,6 +194,7 @@ export function useAudioStreamUrls(filepaths: string[]) {
 
   // Convert results to a Map for easy lookup
   const urls: Record<string, string | null> = {};
+
   queries.forEach((query, index) => {
     urls[filepaths[index]] = query.data || null;
   });
@@ -207,6 +219,7 @@ export function usePrefetchVideoUrl() {
   return useCallback(
     async (filepath: string) => {
       const token = await getToken();
+
       if (!token) return;
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -219,6 +232,6 @@ export function usePrefetchVideoUrl() {
         },
       });
     },
-    [getToken]
+    [getToken],
   );
 }

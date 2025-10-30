@@ -1,14 +1,27 @@
 "use client";
 
+import type { Folder } from "@/lib/types";
+
 import { useState, useEffect } from "react";
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Chip } from "@heroui/chip";
-import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
-import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
+import {
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
+  DropdownItem,
+} from "@heroui/dropdown";
+import {
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  useDisclosure,
+} from "@heroui/modal";
 import { Input } from "@heroui/input";
 import { Folder2, Edit, Trash, FolderAdd } from "iconsax-reactjs";
-import type { Folder } from "@/lib/types";
 
 interface FolderSidebarProps {
   folders: Folder[];
@@ -31,7 +44,7 @@ export default function FolderSidebar({
   onDeleteFolder,
   showAllOption = true,
   totalCount = 0,
-  title = "Folders"
+  title = "Folders",
 }: FolderSidebarProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -39,13 +52,28 @@ export default function FolderSidebar({
     setMounted(true);
   }, []);
 
-  const { isOpen: isCreateOpen, onOpen: onCreateOpen, onClose: onCreateClose } = useDisclosure();
-  const { isOpen: isRenameOpen, onOpen: onRenameOpen, onClose: onRenameClose } = useDisclosure();
-  const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure();
+  const {
+    isOpen: isCreateOpen,
+    onOpen: onCreateOpen,
+    onClose: onCreateClose,
+  } = useDisclosure();
+  const {
+    isOpen: isRenameOpen,
+    onOpen: onRenameOpen,
+    onClose: onRenameClose,
+  } = useDisclosure();
+  const {
+    isOpen: isDeleteOpen,
+    onOpen: onDeleteOpen,
+    onClose: onDeleteClose,
+  } = useDisclosure();
   const [newFolderName, setNewFolderName] = useState("");
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [deletingFolder, setDeletingFolder] = useState<{ name: string; fileCount: number } | null>(null);
+  const [deletingFolder, setDeletingFolder] = useState<{
+    name: string;
+    fileCount: number;
+  } | null>(null);
 
   const handleCreate = async () => {
     if (!newFolderName.trim() || !onCreateFolder) return;
@@ -90,11 +118,11 @@ export default function FolderSidebar({
           </h3>
           {onCreateFolder && (
             <Button
+              isIconOnly
+              className="hover:bg-primary/10"
               size="sm"
               variant="light"
-              isIconOnly
               onPress={onCreateOpen}
-              className="hover:bg-primary/10"
             >
               <FolderAdd size={18} />
             </Button>
@@ -103,9 +131,9 @@ export default function FolderSidebar({
         <CardBody className="gap-1 pt-0">
           {showAllOption && (
             <Button
-              variant={selectedFolder === null ? "flat" : "light"}
-              color={selectedFolder === null ? "primary" : "default"}
               className="justify-start h-10"
+              color={selectedFolder === null ? "primary" : "default"}
+              variant={selectedFolder === null ? "flat" : "light"}
               onPress={() => onSelectFolder(null)}
             >
               <span className="flex-1 text-left">All Files</span>
@@ -119,12 +147,14 @@ export default function FolderSidebar({
             {folders.map((folder) => (
               <div key={folder.name} className="group flex items-center gap-1">
                 <Button
-                  variant={selectedFolder === folder.name ? "flat" : "light"}
-                  color={selectedFolder === folder.name ? "primary" : "default"}
                   className="justify-start flex-1 h-10"
+                  color={selectedFolder === folder.name ? "primary" : "default"}
+                  variant={selectedFolder === folder.name ? "flat" : "light"}
                   onPress={() => onSelectFolder(folder.name)}
                 >
-                  <span className="flex-1 text-left truncate">{folder.name}</span>
+                  <span className="flex-1 text-left truncate">
+                    {folder.name}
+                  </span>
                   <Chip size="sm" variant="flat">
                     {folder.file_count}
                   </Chip>
@@ -134,16 +164,16 @@ export default function FolderSidebar({
                   <Dropdown>
                     <DropdownTrigger>
                       <Button
-                        size="sm"
-                        variant="light"
                         isIconOnly
                         className="opacity-0 group-hover:opacity-100 transition-opacity"
+                        size="sm"
+                        variant="light"
                       >
                         ⋮
                       </Button>
                     </DropdownTrigger>
                     <DropdownMenu>
-                      {onRenameFolder && (
+                      {onRenameFolder ? (
                         <DropdownItem
                           key="rename"
                           startContent={<Edit size={16} />}
@@ -151,18 +181,20 @@ export default function FolderSidebar({
                         >
                           Rename
                         </DropdownItem>
-                      )}
-                      {onDeleteFolder && (
+                      ) : null}
+                      {onDeleteFolder ? (
                         <DropdownItem
                           key="delete"
-                          color="danger"
                           className="text-danger"
+                          color="danger"
                           startContent={<Trash size={16} />}
-                          onPress={() => openDelete(folder.name, folder.file_count)}
+                          onPress={() =>
+                            openDelete(folder.name, folder.file_count)
+                          }
                         >
                           Delete
                         </DropdownItem>
-                      )}
+                      ) : null}
                     </DropdownMenu>
                   </Dropdown>
                 )}
@@ -185,12 +217,11 @@ export default function FolderSidebar({
             <ModalBody>
               <Input
                 id="new-folder-name"
-                name="folderName"
                 label="Folder Name"
+                name="folderName"
                 placeholder="Enter folder name"
                 value={newFolderName}
                 onValueChange={setNewFolderName}
-                autoFocus
               />
             </ModalBody>
             <ModalFooter>
@@ -199,8 +230,8 @@ export default function FolderSidebar({
               </Button>
               <Button
                 color="primary"
-                onPress={handleCreate}
                 isDisabled={!newFolderName.trim()}
+                onPress={handleCreate}
               >
                 Create
               </Button>
@@ -216,12 +247,11 @@ export default function FolderSidebar({
             <ModalBody>
               <Input
                 id="rename-folder-name"
-                name="renameFolderName"
                 label="New Name"
+                name="renameFolderName"
                 placeholder="Enter new name"
                 value={renameValue}
                 onValueChange={setRenameValue}
-                autoFocus
               />
             </ModalBody>
             <ModalFooter>
@@ -230,8 +260,8 @@ export default function FolderSidebar({
               </Button>
               <Button
                 color="primary"
-                onPress={handleRename}
                 isDisabled={!renameValue.trim()}
+                onPress={handleRename}
               >
                 Rename
               </Button>
@@ -247,12 +277,16 @@ export default function FolderSidebar({
             <ModalBody>
               <div className="space-y-2">
                 <p>
-                  Are you sure you want to delete the folder <strong>&quot;{deletingFolder.name}&quot;</strong>?
+                  Are you sure you want to delete the folder{" "}
+                  <strong>&quot;{deletingFolder.name}&quot;</strong>?
                 </p>
                 {deletingFolder.fileCount > 0 && (
                   <div className="p-3 rounded-lg bg-danger-50 border border-danger-200">
                     <p className="text-sm text-danger-600">
-                      <strong>Warning:</strong> This will permanently delete {deletingFolder.fileCount} file{deletingFolder.fileCount !== 1 ? 's' : ''} in this folder.
+                      <strong>Warning:</strong> This will permanently delete{" "}
+                      {deletingFolder.fileCount} file
+                      {deletingFolder.fileCount !== 1 ? "s" : ""} in this
+                      folder.
                     </p>
                   </div>
                 )}
@@ -265,10 +299,7 @@ export default function FolderSidebar({
               <Button variant="light" onPress={onDeleteClose}>
                 Cancel
               </Button>
-              <Button
-                color="danger"
-                onPress={confirmDelete}
-              >
+              <Button color="danger" onPress={confirmDelete}>
                 Delete Folder
               </Button>
             </ModalFooter>

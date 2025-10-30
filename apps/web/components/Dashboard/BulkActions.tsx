@@ -9,25 +9,42 @@ interface BulkActionsProps {
   actions: {
     label: string;
     onClick: () => void;
-    color?: "primary" | "danger" | "default" | "secondary" | "success" | "warning";
-    variant?: "solid" | "flat" | "bordered" | "light" | "faded" | "shadow" | "ghost";
+    color?:
+      | "primary"
+      | "danger"
+      | "default"
+      | "secondary"
+      | "success"
+      | "warning";
+    variant?:
+      | "solid"
+      | "flat"
+      | "bordered"
+      | "light"
+      | "faded"
+      | "shadow"
+      | "ghost";
   }[];
 }
 
-export default function BulkActions({ selectedCount, onClear, actions }: BulkActionsProps) {
+export default function BulkActions({
+  selectedCount,
+  onClear,
+  actions,
+}: BulkActionsProps) {
   if (selectedCount === 0) return null;
 
   return (
     <div className="mb-4 flex gap-3 items-center bg-default-100 px-4 py-3 rounded-xl border border-default-200">
-      <Chip color="primary" variant="flat" size="lg">
+      <Chip color="primary" size="lg" variant="flat">
         {selectedCount} selected
       </Chip>
       <div className="flex gap-2 flex-1">
         {actions.map((action, index) => (
           <Button
             key={index}
-            size="sm"
             color={action.color || "default"}
+            size="sm"
             variant={action.variant || "flat"}
             onPress={action.onClick}
           >
@@ -35,12 +52,7 @@ export default function BulkActions({ selectedCount, onClear, actions }: BulkAct
           </Button>
         ))}
       </div>
-      <Button
-        size="sm"
-        variant="light"
-        onPress={onClear}
-        className="ml-auto"
-      >
+      <Button className="ml-auto" size="sm" variant="light" onPress={onClear}>
         Clear Selection
       </Button>
     </div>

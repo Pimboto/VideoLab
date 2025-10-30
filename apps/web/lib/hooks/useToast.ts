@@ -4,7 +4,13 @@
 
 import { addToast } from "@heroui/toast";
 
-export type ToastType = "default" | "primary" | "secondary" | "success" | "warning" | "danger";
+export type ToastType =
+  | "default"
+  | "primary"
+  | "secondary"
+  | "success"
+  | "warning"
+  | "danger";
 
 export interface ToastOptions {
   title?: string;

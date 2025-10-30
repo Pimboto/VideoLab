@@ -4,6 +4,7 @@
  */
 import { useAuth } from "@clerk/nextjs";
 import { useState, useCallback, useEffect, useRef } from "react";
+
 import { apiClient, API_ENDPOINTS, JobStatusResponse } from "@/lib/api/client";
 
 export type JobStatus = "pending" | "processing" | "completed" | "failed";
@@ -38,19 +39,25 @@ export function useJobs() {
 
     try {
       const token = await getToken();
+
       if (!token) {
         throw new Error("Not authenticated");
       }
 
       const response = await apiClient.get<JobsListResponse>(
         API_ENDPOINTS.PROCESSING.JOBS,
-        token
+        token,
       );
+
       setJobs(response.jobs || []);
+
       return response.jobs || [];
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to fetch jobs";
+      const message =
+        err instanceof Error ? err.message : "Failed to fetch jobs";
+
       setError(message);
+
       return null;
     } finally {
       setIsLoading(false);
@@ -66,22 +73,27 @@ export function useJobs() {
 
       try {
         const token = await getToken();
+
         if (!token) {
           throw new Error("Not authenticated");
         }
 
         const response = await apiClient.get<Job>(
           API_ENDPOINTS.PROCESSING.STATUS(jobId),
-          token
+          token,
         );
+
         return response;
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to get job status";
+        const message =
+          err instanceof Error ? err.message : "Failed to get job status";
+
         setError(message);
+
         return null;
       }
     },
-    [getToken]
+    [getToken],
   );
 
   /**
@@ -93,22 +105,30 @@ export function useJobs() {
 
       try {
         const token = await getToken();
+
         if (!token) {
           throw new Error("Not authenticated");
         }
 
-        await apiClient.delete(API_ENDPOINTS.PROCESSING.DELETE_JOB(jobId), token);
+        await apiClient.delete(
+          API_ENDPOINTS.PROCESSING.DELETE_JOB(jobId),
+          token,
+        );
 
         // Update local state
         setJobs((prevJobs) => prevJobs.filter((job) => job.job_id !== jobId));
+
         return true;
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to delete job";
+        const message =
+          err instanceof Error ? err.message : "Failed to delete job";
+
         setError(message);
+
         return false;
       }
     },
-    [getToken]
+    [getToken],
   );
 
   /**
@@ -132,7 +152,7 @@ export function useJobs() {
         // Stop polling if all jobs are completed or failed
         if (currentJobs) {
           const hasActiveJobs = currentJobs.some(
-            (job) => job.status === "pending" || job.status === "processing"
+            (job) => job.status === "pending" || job.status === "processing",
           );
 
           if (!hasActiveJobs && pollingIntervalRef.current) {
@@ -142,7 +162,7 @@ export function useJobs() {
         }
       }, interval);
     },
-    [fetchJobs]
+    [fetchJobs],
   );
 
   /**
@@ -162,7 +182,7 @@ export function useJobs() {
     async (
       jobId: string,
       onUpdate?: (job: Job) => void,
-      interval: number = 2000
+      interval: number = 2000,
     ): Promise<Job | null> => {
       return new Promise((resolve) => {
         const pollInterval = setInterval(async () => {
@@ -179,7 +199,7 @@ export function useJobs() {
         }, interval);
       });
     },
-    [getJobStatus]
+    [getJobStatus],
   );
 
   /**
@@ -189,7 +209,7 @@ export function useJobs() {
     async (jobId: string): Promise<Job | null> => {
       return getJobStatus(jobId);
     },
-    [getJobStatus]
+    [getJobStatus],
   );
 
   /**

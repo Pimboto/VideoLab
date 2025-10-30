@@ -4,6 +4,7 @@
  */
 import { useAuth } from "@clerk/nextjs";
 import { useState, useCallback } from "react";
+
 import { apiClient, API_ENDPOINTS } from "@/lib/api/client";
 
 export interface FileItem {
@@ -32,17 +33,22 @@ export function useFiles() {
    * List files by category
    */
   const listFiles = useCallback(
-    async (category: FileCategory, subfolder?: string | null): Promise<FileListResponse | null> => {
+    async (
+      category: FileCategory,
+      subfolder?: string | null,
+    ): Promise<FileListResponse | null> => {
       setIsLoading(true);
       setError(null);
 
       try {
         const token = await getToken();
+
         if (!token) {
           throw new Error("Not authenticated");
         }
 
         let endpoint: string;
+
         switch (category) {
           case "videos":
             endpoint = API_ENDPOINTS.FILES.LIST_VIDEOS;
@@ -66,16 +72,20 @@ export function useFiles() {
         }
 
         const response = await apiClient.get<FileListResponse>(endpoint, token);
+
         return response;
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to list files";
+        const message =
+          err instanceof Error ? err.message : "Failed to list files";
+
         setError(message);
+
         return null;
       } finally {
         setIsLoading(false);
       }
     },
-    [getToken]
+    [getToken],
   );
 
   /**
@@ -88,17 +98,19 @@ export function useFiles() {
 
       try {
         const token = await getToken();
+
         if (!token) {
           throw new Error("Not authenticated");
         }
 
         // Send filepath in body, not as query parameter
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const apiUrl =
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
         const response = await fetch(`${apiUrl}${API_ENDPOINTS.FILES.DELETE}`, {
           method: "DELETE",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ filepath }),
         });
@@ -107,19 +119,25 @@ export function useFiles() {
           const errorData = await response.json().catch(() => ({
             detail: `HTTP ${response.status}: ${response.statusText}`,
           }));
-          throw new Error(errorData.detail || `Delete failed: ${response.statusText}`);
+
+          throw new Error(
+            errorData.detail || `Delete failed: ${response.statusText}`,
+          );
         }
 
         return true;
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to delete file";
+        const message =
+          err instanceof Error ? err.message : "Failed to delete file";
+
         setError(message);
+
         return false;
       } finally {
         setIsLoading(false);
       }
     },
-    [getToken]
+    [getToken],
   );
 
   /**
@@ -127,48 +145,62 @@ export function useFiles() {
    * Best practice: Use this instead of looping deleteFile for better performance
    */
   const bulkDeleteFiles = useCallback(
-    async (filepaths: string[]): Promise<{ deleted: number; failed: number; success: boolean }> => {
+    async (
+      filepaths: string[],
+    ): Promise<{ deleted: number; failed: number; success: boolean }> => {
       setIsLoading(true);
       setError(null);
 
       try {
         const token = await getToken();
+
         if (!token) {
           throw new Error("Not authenticated");
         }
 
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-        const response = await fetch(`${apiUrl}${API_ENDPOINTS.FILES.BULK_DELETE}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
+        const apiUrl =
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const response = await fetch(
+          `${apiUrl}${API_ENDPOINTS.FILES.BULK_DELETE}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ filepaths }),
           },
-          body: JSON.stringify({ filepaths }),
-        });
+        );
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({
             detail: `HTTP ${response.status}: ${response.statusText}`,
           }));
-          throw new Error(errorData.detail || `Bulk delete failed: ${response.statusText}`);
+
+          throw new Error(
+            errorData.detail || `Bulk delete failed: ${response.statusText}`,
+          );
         }
 
         const data = await response.json();
+
         return {
           deleted: data.deleted_count,
           failed: data.failed_count,
-          success: data.deleted_count > 0
+          success: data.deleted_count > 0,
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to delete files";
+        const message =
+          err instanceof Error ? err.message : "Failed to delete files";
+
         setError(message);
+
         return { deleted: 0, failed: filepaths.length, success: false };
       } finally {
         setIsLoading(false);
       }
     },
-    [getToken]
+    [getToken],
   );
 
   /**
@@ -176,48 +208,66 @@ export function useFiles() {
    * Best practice: Use this instead of looping moveFile for better performance
    */
   const bulkMoveFiles = useCallback(
-    async (filepaths: string[], destinationFolder: string): Promise<{ moved: number; failed: number; success: boolean }> => {
+    async (
+      filepaths: string[],
+      destinationFolder: string,
+    ): Promise<{ moved: number; failed: number; success: boolean }> => {
       setIsLoading(true);
       setError(null);
 
       try {
         const token = await getToken();
+
         if (!token) {
           throw new Error("Not authenticated");
         }
 
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-        const response = await fetch(`${apiUrl}${API_ENDPOINTS.FILES.BULK_MOVE}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
+        const apiUrl =
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const response = await fetch(
+          `${apiUrl}${API_ENDPOINTS.FILES.BULK_MOVE}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              filepaths,
+              destination_folder: destinationFolder,
+            }),
           },
-          body: JSON.stringify({ filepaths, destination_folder: destinationFolder }),
-        });
+        );
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({
             detail: `HTTP ${response.status}: ${response.statusText}`,
           }));
-          throw new Error(errorData.detail || `Bulk move failed: ${response.statusText}`);
+
+          throw new Error(
+            errorData.detail || `Bulk move failed: ${response.statusText}`,
+          );
         }
 
         const data = await response.json();
+
         return {
           moved: data.moved_count,
           failed: data.failed_count,
-          success: data.moved_count > 0
+          success: data.moved_count > 0,
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to move files";
+        const message =
+          err instanceof Error ? err.message : "Failed to move files";
+
         setError(message);
+
         return { moved: 0, failed: filepaths.length, success: false };
       } finally {
         setIsLoading(false);
       }
     },
-    [getToken]
+    [getToken],
   );
 
   /**
@@ -230,6 +280,7 @@ export function useFiles() {
 
       try {
         const token = await getToken();
+
         if (!token) {
           throw new Error("Not authenticated");
         }
@@ -240,18 +291,22 @@ export function useFiles() {
             source: sourcePath,
             destination: destinationPath,
           },
-          token
+          token,
         );
+
         return true;
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to move file";
+        const message =
+          err instanceof Error ? err.message : "Failed to move file";
+
         setError(message);
+
         return false;
       } finally {
         setIsLoading(false);
       }
     },
-    [getToken]
+    [getToken],
   );
 
   /**
@@ -262,9 +317,11 @@ export function useFiles() {
     async (filepath: string): Promise<string | null> => {
       try {
         const token = await getToken();
+
         if (!token) return null;
 
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const apiUrl =
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
         const endpoint = `/api/video-processor/files/stream-url/video?filepath=${encodeURIComponent(filepath)}`;
 
         const response = await fetch(`${apiUrl}${endpoint}`, {
@@ -276,13 +333,15 @@ export function useFiles() {
         if (!response.ok) return null;
 
         const data = await response.json();
+
         return data.url;
-      } catch (err) {
-        console.error("Error getting video stream URL:", err);
+      } catch {
+        // Silent fail for stream URL
+
         return null;
       }
     },
-    [getToken]
+    [getToken],
   );
 
   /**
@@ -293,9 +352,11 @@ export function useFiles() {
     async (filepath: string): Promise<string | null> => {
       try {
         const token = await getToken();
+
         if (!token) return null;
 
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const apiUrl =
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
         const endpoint = `/api/video-processor/files/stream-url/audio?filepath=${encodeURIComponent(filepath)}`;
 
         const response = await fetch(`${apiUrl}${endpoint}`, {
@@ -307,13 +368,15 @@ export function useFiles() {
         if (!response.ok) return null;
 
         const data = await response.json();
+
         return data.url;
-      } catch (err) {
-        console.error("Error getting audio stream URL:", err);
+      } catch {
+        // Silent fail for stream URL
+
         return null;
       }
     },
-    [getToken]
+    [getToken],
   );
 
   /**
@@ -321,6 +384,7 @@ export function useFiles() {
    */
   const getCsvPreviewUrl = useCallback((filepath: string): string => {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
     return `${apiUrl}${API_ENDPOINTS.FILES.PREVIEW_CSV(filepath)}`;
   }, []);
 
@@ -334,6 +398,7 @@ export function useFiles() {
 
       try {
         const token = await getToken();
+
         if (!token) {
           throw new Error("Not authenticated");
         }
@@ -344,19 +409,22 @@ export function useFiles() {
             method: "PATCH",
             body: JSON.stringify({ filepath, new_name: newName }),
           },
-          token
+          token,
         );
 
         return true;
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to rename file";
+        const message =
+          err instanceof Error ? err.message : "Failed to rename file";
+
         setError(message);
+
         return false;
       } finally {
         setIsLoading(false);
       }
     },
-    [getToken]
+    [getToken],
   );
 
   return {

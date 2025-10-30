@@ -1,23 +1,44 @@
 "use client";
 
+import type { Selection } from "@heroui/table";
+import type { Project } from "@/lib/api/client";
+
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@heroui/button";
 import { Card, CardBody } from "@heroui/card";
-import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from "@heroui/modal";
-import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from "@heroui/table";
+import {
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  useDisclosure,
+} from "@heroui/modal";
+import {
+  Table,
+  TableHeader,
+  TableColumn,
+  TableBody,
+  TableRow,
+  TableCell,
+} from "@heroui/table";
 import { Chip } from "@heroui/chip";
-import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
+import {
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
+  DropdownItem,
+} from "@heroui/dropdown";
 import { Pagination } from "@heroui/pagination";
-import type { Selection } from "@heroui/table";
+import Image from "next/image";
+
 import {
   useProjects,
   useProjectUrls,
   useDeleteProject,
   useDownloadProject,
 } from "@/lib/hooks";
-import type { Project } from "@/lib/api/client";
-import Image from "next/image";
 
 const PROJECT_COLUMNS = [
   { key: "thumbnail", label: "PREVIEW" },
@@ -25,14 +46,16 @@ const PROJECT_COLUMNS = [
   { key: "videos", label: "VIDEOS" },
   { key: "size", label: "SIZE" },
   { key: "created", label: "CREATED" },
-  { key: "actions", label: "ACTIONS" }
-] as const;
+  { key: "actions", label: "ACTIONS" },
+];
 
 function ProjectsPageContent() {
   // Fetch projects using TanStack Query
   const { data: projects = [], isLoading, error, refetch } = useProjects();
 
-  const [selectedProjects, setSelectedProjects] = useState<Selection>(new Set());
+  const [selectedProjects, setSelectedProjects] = useState<Selection>(
+    new Set(),
+  );
   const [previewProject, setPreviewProject] = useState<Project | null>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -41,7 +64,11 @@ function ProjectsPageContent() {
     setMounted(true);
   }, []);
 
-  const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onClose: onPreviewClose } = useDisclosure();
+  const {
+    isOpen: isPreviewOpen,
+    onOpen: onPreviewOpen,
+    onClose: onPreviewClose,
+  } = useDisclosure();
 
   // Mutations
   const deleteProjectMutation = useDeleteProject();
@@ -66,8 +93,8 @@ function ProjectsPageContent() {
         projectId: project.id,
         projectName: project.name,
       });
-    } catch (error) {
-      console.error("Download failed:", error);
+    } catch {
+      // Error already handled by mutation
     }
   };
 
@@ -79,38 +106,42 @@ function ProjectsPageContent() {
         projectId: project.id,
         hardDelete: false, // Soft delete by default
       });
-    } catch (error) {
-      console.error("Delete failed:", error);
+    } catch {
+      // Error already handled by mutation
     }
   };
 
   const handleBulkDelete = async () => {
-    const selection = selectedProjects === "all"
-      ? visibleProjects.map(p => p.id)
-      : Array.from(selectedProjects);
+    const selection =
+      selectedProjects === "all"
+        ? visibleProjects.map((p) => p.id)
+        : Array.from(selectedProjects);
 
     if (selection.length === 0) return;
     if (!confirm(`Delete ${selection.length} selected projects?`)) return;
 
     try {
       await Promise.all(
-        selection.map(projectId =>
-          deleteProjectMutation.mutateAsync({ projectId: projectId as string })
-        )
+        selection.map((projectId) =>
+          deleteProjectMutation.mutateAsync({ projectId: projectId as string }),
+        ),
       );
       setSelectedProjects(new Set<string>());
-    } catch (error) {
-      console.error("Bulk delete failed:", error);
+    } catch {
+      // Error already handled
     }
   };
 
   const getSelectedCount = () => {
-    return selectedProjects === "all" ? visibleProjects.length : selectedProjects.size;
+    return selectedProjects === "all"
+      ? visibleProjects.length
+      : selectedProjects.size;
   };
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+
     return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
   };
 
@@ -118,10 +149,14 @@ function ProjectsPageContent() {
     const date = new Date(dateStr);
     // Use consistent UTC-based formatting to avoid hydration errors
     const year = date.getUTCFullYear();
-    const month = date.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+    const month = date.toLocaleString("en-US", {
+      month: "short",
+      timeZone: "UTC",
+    });
     const day = date.getUTCDate();
     const hours = date.getUTCHours().toString().padStart(2, "0");
     const minutes = date.getUTCMinutes().toString().padStart(2, "0");
+
     return `${month} ${day}, ${year} ${hours}:${minutes}`;
   };
 
@@ -153,7 +188,7 @@ function ProjectsPageContent() {
             View and download your completed batch processing projects
           </p>
         </div>
-        <Button onPress={() => refetch()} variant="flat" isLoading={isLoading}>
+        <Button isLoading={isLoading} variant="flat" onPress={() => refetch()}>
           Refresh
         </Button>
       </div>
@@ -163,11 +198,11 @@ function ProjectsPageContent() {
         <div className="mb-4 flex gap-2 items-center bg-default-100 p-3 rounded-lg">
           <Chip color="primary">{getSelectedCount()} selected</Chip>
           <Button
-            size="sm"
             color="danger"
+            isLoading={deleteProjectMutation.isPending}
+            size="sm"
             variant="flat"
             onPress={handleBulkDelete}
-            isLoading={deleteProjectMutation.isPending}
           >
             Delete Selected
           </Button>
@@ -185,7 +220,9 @@ function ProjectsPageContent() {
       {error && (
         <Card className="mb-4 bg-danger-50 border-danger">
           <CardBody>
-            <p className="text-danger">Error loading projects: {error.message}</p>
+            <p className="text-danger">
+              Error loading projects: {error.message}
+            </p>
           </CardBody>
         </Card>
       )}
@@ -193,29 +230,30 @@ function ProjectsPageContent() {
       {/* Projects Table */}
       <Table
         aria-label="Projects table"
-        selectionMode="multiple"
-        selectedKeys={selectedProjects}
-        onSelectionChange={setSelectedProjects}
         classNames={{
           wrapper: "min-h-[400px]",
         }}
+        selectedKeys={selectedProjects}
+        selectionMode="multiple"
+        onSelectionChange={setSelectedProjects}
       >
         <TableHeader columns={PROJECT_COLUMNS}>
           {(column) => (
-            <TableColumn key={column.key}>
-              {column.label}
-            </TableColumn>
+            <TableColumn key={column.key}>{column.label}</TableColumn>
           )}
         </TableHeader>
         <TableBody
-          items={visibleProjects}
-          isLoading={isLoading}
           emptyContent={isLoading ? "Loading projects..." : "No projects found"}
+          isLoading={isLoading}
+          items={visibleProjects}
         >
           {(project) => (
             <TableRow key={project.id}>
               <TableCell>
-                <ProjectThumbnail project={project} onClick={() => handlePreview(project)} />
+                <ProjectThumbnail
+                  project={project}
+                  onClick={() => handlePreview(project)}
+                />
               </TableCell>
               <TableCell>
                 <div className="max-w-xs">
@@ -228,7 +266,7 @@ function ProjectsPageContent() {
                 </div>
               </TableCell>
               <TableCell>
-                <Chip size="sm" variant="flat" color="secondary">
+                <Chip color="secondary" size="sm" variant="flat">
                   {project.video_count} videos
                 </Chip>
               </TableCell>
@@ -242,11 +280,13 @@ function ProjectsPageContent() {
                   <p className="text-sm text-default-500">
                     {formatDate(project.created_at)}
                   </p>
-                  {mounted && project.expires_at && getTimeUntilExpiration(project.expires_at) && (
-                    <p className="text-xs text-warning mt-1">
-                      {getTimeUntilExpiration(project.expires_at)}
-                    </p>
-                  )}
+                  {mounted &&
+                    project.expires_at &&
+                    getTimeUntilExpiration(project.expires_at) && (
+                      <p className="text-xs text-warning mt-1">
+                        {getTimeUntilExpiration(project.expires_at)}
+                      </p>
+                    )}
                 </div>
               </TableCell>
               <TableCell>
@@ -260,19 +300,23 @@ function ProjectsPageContent() {
                   </Button>
                   <Dropdown>
                     <DropdownTrigger>
-                      <Button size="sm" variant="flat">⋮</Button>
+                      <Button size="sm" variant="flat">
+                        ⋮
+                      </Button>
                     </DropdownTrigger>
                     <DropdownMenu>
                       <DropdownItem
-                        onPress={() => handleDownload(project)}
+                        key="download"
                         isDisabled={!project.zip_url}
+                        onPress={() => handleDownload(project)}
                       >
                         Download ZIP
                       </DropdownItem>
                       <DropdownItem
-                        onPress={() => handleDelete(project)}
+                        key="delete"
                         className="text-danger"
                         color="danger"
+                        onPress={() => handleDelete(project)}
                       >
                         Delete
                       </DropdownItem>
@@ -289,12 +333,12 @@ function ProjectsPageContent() {
       {totalPages > 1 && (
         <div className="flex justify-center mt-6">
           <Pagination
-            total={totalPages}
-            page={currentPage}
-            onChange={setCurrentPage}
             showControls
             color="primary"
+            page={currentPage}
             size="lg"
+            total={totalPages}
+            onChange={setCurrentPage}
           />
         </div>
       )}
@@ -302,18 +346,19 @@ function ProjectsPageContent() {
       {/* Stats */}
       {projects.length > 0 && (
         <div className="text-center text-sm text-default-500 mt-4">
-          Showing {startIndex + 1}-{Math.min(endIndex, projects.length)} of {projects.length} projects
+          Showing {startIndex + 1}-{Math.min(endIndex, projects.length)} of{" "}
+          {projects.length} projects
         </div>
       )}
 
       {/* Preview Modal */}
       {mounted && previewProject && (
         <PreviewModal
-          project={previewProject}
           isOpen={isPreviewOpen}
+          mounted={mounted}
+          project={previewProject}
           onClose={onPreviewClose}
           onDownload={() => handleDownload(previewProject)}
-          mounted={mounted}
         />
       )}
     </div>
@@ -344,7 +389,7 @@ export default dynamic(() => Promise.resolve(ProjectsPageContent), {
  */
 function ProjectThumbnail({
   project,
-  onClick
+  onClick,
 }: {
   project: Project;
   onClick: () => void;
@@ -354,7 +399,15 @@ function ProjectThumbnail({
   return (
     <div
       className="w-20 h-12 bg-black rounded overflow-hidden cursor-pointer hover:opacity-80 transition"
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
     >
       {isLoading ? (
         <div className="w-full h-full flex items-center justify-center">
@@ -362,11 +415,11 @@ function ProjectThumbnail({
         </div>
       ) : urls?.preview_thumbnail_url ? (
         <Image
-          src={urls.preview_thumbnail_url}
           alt={project.name}
-          width={80}
-          height={48}
           className="w-full h-full object-cover"
+          height={48}
+          src={urls.preview_thumbnail_url}
+          width={80}
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center text-white text-xs">
@@ -399,6 +452,7 @@ function PreviewModal({
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+
     return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
   };
 
@@ -406,10 +460,14 @@ function PreviewModal({
     const date = new Date(dateStr);
     // Use consistent UTC-based formatting to avoid hydration errors
     const year = date.getUTCFullYear();
-    const month = date.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+    const month = date.toLocaleString("en-US", {
+      month: "short",
+      timeZone: "UTC",
+    });
     const day = date.getUTCDate();
     const hours = date.getUTCHours().toString().padStart(2, "0");
     const minutes = date.getUTCMinutes().toString().padStart(2, "0");
+
     return `${month} ${day}, ${year} ${hours}:${minutes}`;
   };
 
@@ -433,7 +491,7 @@ function PreviewModal({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="5xl" scrollBehavior="inside">
+    <Modal isOpen={isOpen} scrollBehavior="inside" size="5xl" onClose={onClose}>
       <ModalContent>
         <ModalHeader>{project.name}</ModalHeader>
         <ModalBody>
@@ -446,11 +504,12 @@ function PreviewModal({
             </div>
           ) : urls?.preview_video_url ? (
             <video
+              autoPlay
               controls
               className="w-full max-h-[70vh] object-contain bg-black rounded-lg"
               src={urls.preview_video_url}
-              autoPlay
             >
+              <track kind="captions" />
               Your browser does not support video playback.
             </video>
           ) : (
@@ -471,11 +530,13 @@ function PreviewModal({
               <span>•</span>
               <span>Created {formatDate(project.created_at)}</span>
             </div>
-            {mounted && project.expires_at && getTimeUntilExpiration(project.expires_at) && (
-              <p className="text-sm text-warning">
-                {getTimeUntilExpiration(project.expires_at)}
-              </p>
-            )}
+            {mounted &&
+              project.expires_at &&
+              getTimeUntilExpiration(project.expires_at) && (
+                <p className="text-sm text-warning">
+                  {getTimeUntilExpiration(project.expires_at)}
+                </p>
+              )}
           </div>
         </ModalBody>
         <ModalFooter>
@@ -484,8 +545,8 @@ function PreviewModal({
           </Button>
           <Button
             color="primary"
-            onPress={onDownload}
             isDisabled={!project.zip_url}
+            onPress={onDownload}
           >
             Download ZIP
           </Button>

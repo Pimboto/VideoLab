@@ -5,8 +5,7 @@
  * in all requests to the backend API.
  */
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /**
  * Base API client class
@@ -29,7 +28,7 @@ class APIClient {
   async request<T = any>(
     endpoint: string,
     options: RequestInit = {},
-    token?: string | null
+    token?: string | null,
   ): Promise<T> {
     const headers: HeadersInit = {
       ...options.headers,
@@ -37,12 +36,13 @@ class APIClient {
 
     // Add Content-Type header if body is present and not FormData
     if (options.body && !(options.body instanceof FormData)) {
-      headers["Content-Type"] = "application/json";
+      (headers as Record<string, string>)["Content-Type"] =
+        "application/json";
     }
 
     // Add authentication token if provided
     if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
+      (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
     }
 
     const url = `${this.baseURL}${endpoint}`;
@@ -59,11 +59,14 @@ class APIClient {
           detail: `HTTP ${response.status}: ${response.statusText}`,
         }));
 
-        throw new Error(errorData.detail || `Request failed: ${response.statusText}`);
+        throw new Error(
+          errorData.detail || `Request failed: ${response.statusText}`,
+        );
       }
 
       // Parse JSON response
       const data = await response.json();
+
       return data as T;
     } catch (error) {
       if (error instanceof Error) {
@@ -86,7 +89,7 @@ class APIClient {
   async post<T = any>(
     endpoint: string,
     data?: any,
-    token?: string | null
+    token?: string | null,
   ): Promise<T> {
     return this.request<T>(
       endpoint,
@@ -94,7 +97,7 @@ class APIClient {
         method: "POST",
         body: data ? JSON.stringify(data) : undefined,
       },
-      token
+      token,
     );
   }
 
@@ -104,7 +107,7 @@ class APIClient {
   async put<T = any>(
     endpoint: string,
     data?: any,
-    token?: string | null
+    token?: string | null,
   ): Promise<T> {
     return this.request<T>(
       endpoint,
@@ -112,7 +115,7 @@ class APIClient {
         method: "PUT",
         body: data ? JSON.stringify(data) : undefined,
       },
-      token
+      token,
     );
   }
 
@@ -138,7 +141,7 @@ class APIClient {
     endpoint: string,
     formData: FormData,
     token: string,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
   ): Promise<T> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -150,6 +153,7 @@ class APIClient {
             // HTTP upload is 80% of total progress
             // Remaining 20% is server processing (uploading to AWS S3)
             const httpProgress = (e.loaded / e.total) * 80;
+
             onProgress(Math.round(httpProgress));
           }
         });
@@ -170,6 +174,7 @@ class APIClient {
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const data = JSON.parse(xhr.responseText);
+
             resolve(data);
           } catch {
             resolve(xhr.responseText as any);
@@ -177,7 +182,10 @@ class APIClient {
         } else {
           try {
             const error = JSON.parse(xhr.responseText);
-            reject(new Error(error.detail || `Upload failed: ${xhr.statusText}`));
+
+            reject(
+              new Error(error.detail || `Upload failed: ${xhr.statusText}`),
+            );
           } catch {
             reject(new Error(`Upload failed: ${xhr.statusText}`));
           }
@@ -234,8 +242,7 @@ export const API_ENDPOINTS = {
   },
   // Folders
   FOLDERS: {
-    LIST: (category: string) =>
-      `/api/video-processor/folders/${category}`,
+    LIST: (category: string) => `/api/video-processor/folders/${category}`,
     CREATE: "/api/video-processor/folders/create",
     DELETE: "/api/video-processor/folders/delete",
   },
@@ -257,7 +264,8 @@ export const API_ENDPOINTS = {
     LIST: "/api/video-processor/projects",
     GET: (projectId: string) => `/api/video-processor/projects/${projectId}`,
     DELETE: (projectId: string) => `/api/video-processor/projects/${projectId}`,
-    GET_URLS: (projectId: string) => `/api/video-processor/projects/${projectId}/urls`,
+    GET_URLS: (projectId: string) =>
+      `/api/video-processor/projects/${projectId}/urls`,
   },
   // Health
   HEALTH: "/health",

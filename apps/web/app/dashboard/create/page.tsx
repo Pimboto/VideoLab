@@ -11,8 +11,15 @@ import { Switch } from "@heroui/switch";
 import { Progress } from "@heroui/progress";
 import { Chip } from "@heroui/chip";
 import { useRouter } from "next/navigation";
+
 import { fontRoboto, fontInter } from "@/config/fonts";
-import { useFiles, useFolders, useProcessing, useJobs, useToast } from "@/lib/hooks";
+import {
+  useFiles,
+  useFolders,
+  useProcessing,
+  useJobs,
+  useToast,
+} from "@/lib/hooks";
 
 interface Folder {
   name: string;
@@ -81,6 +88,7 @@ export default function CreatePage() {
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
+
     if (
       jobStatus &&
       (jobStatus.status === "pending" || jobStatus.status === "processing")
@@ -89,6 +97,7 @@ export default function CreatePage() {
         checkJobStatus(jobStatus.job_id);
       }, 2000);
     }
+
     return () => {
       if (interval) clearInterval(interval);
     };
@@ -104,20 +113,21 @@ export default function CreatePage() {
 
       if (vData) {
         setVideoFolders(vData.folders || []);
-        if (vData.folders?.length) setSelectedVideoFolder(vData.folders[0].path);
+        if (vData.folders?.length)
+          setSelectedVideoFolder(vData.folders[0].path);
       }
 
       if (aData) {
         setAudioFolders(aData.folders || []);
-        if (aData.folders?.length) setSelectedAudioFolder(aData.folders[0].path);
+        if (aData.folders?.length)
+          setSelectedAudioFolder(aData.folders[0].path);
       }
 
       if (cData) {
         setCSVFiles(cData.files || []);
         if (cData.files?.length) setSelectedCSV(cData.files[0].filepath);
       }
-    } catch (error) {
-      console.error("Error loading data:", error);
+    } catch {
       toast.error("Failed to load data");
     }
   };
@@ -125,6 +135,7 @@ export default function CreatePage() {
   const loadPreviewVideo = async (folderPath: string) => {
     try {
       const folderName = videoFolders.find((f) => f.path === folderPath)?.name;
+
       if (!folderName) return;
 
       // List videos in the selected folder only
@@ -135,18 +146,20 @@ export default function CreatePage() {
 
         // Always load video stream for preview
         const streamUrl = await getVideoStreamUrl(firstVideo.filepath);
+
         if (streamUrl) {
           setPreviewVideoSrc(streamUrl);
         }
       }
-    } catch (error) {
-      console.error("Error loading preview video:", error);
+    } catch {
+      // Silent fail for preview
     }
   };
 
   const loadPreviewText = async (csvFilepath: string) => {
     try {
       const token = await getToken();
+
       if (!token) return;
 
       const csvPreviewUrl = getCsvPreviewUrl(csvFilepath);
@@ -155,7 +168,6 @@ export default function CreatePage() {
       });
 
       if (!csvRes.ok) {
-        console.error("Failed to load CSV file");
         return;
       }
 
@@ -168,8 +180,7 @@ export default function CreatePage() {
       } else {
         setPreviewText("Sample Text");
       }
-    } catch (error) {
-      console.error("Error loading preview text:", error);
+    } catch {
       setPreviewText("Sample Text");
     }
   };
@@ -177,6 +188,7 @@ export default function CreatePage() {
   const checkJobStatus = async (jobId: string) => {
     try {
       const data = await pollJobStatus(jobId);
+
       if (data) {
         setJobStatus({
           job_id: data.job_id,
@@ -190,8 +202,7 @@ export default function CreatePage() {
           setProcessing(false);
         }
       }
-    } catch (error) {
-      console.error("Error checking job status:", error);
+    } catch {
       toast.error("Failed to check job status");
     }
   };
@@ -199,11 +210,13 @@ export default function CreatePage() {
   const handleStartBatch = async () => {
     if (!selectedVideoFolder || !selectedAudioFolder || !selectedCSV) {
       toast.error("Please select video folder, audio folder, and CSV file");
+
       return;
     }
 
     if (!projectName || !projectName.trim()) {
       toast.error("Please enter a project name");
+
       return;
     }
 
@@ -212,9 +225,11 @@ export default function CreatePage() {
     try {
       // Get CSV preview URL and fetch combinations
       const token = await getToken();
+
       if (!token) {
         toast.error("Not authenticated");
         setProcessing(false);
+
         return;
       }
 
@@ -226,6 +241,7 @@ export default function CreatePage() {
       if (!csvRes.ok) {
         toast.error("Failed to load CSV file");
         setProcessing(false);
+
         return;
       }
 
@@ -245,8 +261,8 @@ export default function CreatePage() {
           text_position: position,
           preset_name: preset,
           mode: fitMode,
-          num_videos: 0,  // Will be calculated by backend
-          num_audios: 0,  // Will be calculated by backend
+          num_videos: 0, // Will be calculated by backend
+          num_audios: 0, // Will be calculated by backend
         },
       });
 
@@ -263,8 +279,7 @@ export default function CreatePage() {
         toast.error("Failed to start batch processing");
         setProcessing(false);
       }
-    } catch (error) {
-      console.error("Error starting batch:", error);
+    } catch {
       toast.error("Error starting batch processing");
       setProcessing(false);
     }
@@ -337,10 +352,10 @@ export default function CreatePage() {
                 label="Video Folder"
                 placeholder="Choose video folder"
                 selectedKeys={selectedVideoFolder ? [selectedVideoFolder] : []}
+                size="sm"
                 onSelectionChange={(keys) =>
                   setSelectedVideoFolder(Array.from(keys)[0] as string)
                 }
-                size="sm"
               >
                 {videoFolders.map((folder) => (
                   <SelectItem key={folder.path} textValue={folder.name}>
@@ -353,10 +368,10 @@ export default function CreatePage() {
                 label="Audio Folder"
                 placeholder="Choose audio folder"
                 selectedKeys={selectedAudioFolder ? [selectedAudioFolder] : []}
+                size="sm"
                 onSelectionChange={(keys) =>
                   setSelectedAudioFolder(Array.from(keys)[0] as string)
                 }
-                size="sm"
               >
                 {audioFolders.map((folder) => (
                   <SelectItem key={folder.path} textValue={folder.name}>
@@ -369,10 +384,10 @@ export default function CreatePage() {
                 label="Text CSV File"
                 placeholder="Choose CSV file"
                 selectedKeys={selectedCSV ? [selectedCSV] : []}
+                size="sm"
                 onSelectionChange={(keys) =>
                   setSelectedCSV(Array.from(keys)[0] as string)
                 }
-                size="sm"
               >
                 {csvFiles.map((csv) => (
                   <SelectItem key={csv.filepath} textValue={csv.filename}>
@@ -394,10 +409,10 @@ export default function CreatePage() {
                 <Select
                   label="Text Position"
                   selectedKeys={[position]}
+                  size="sm"
                   onSelectionChange={(keys) =>
                     setPosition(Array.from(keys)[0] as string)
                   }
-                  size="sm"
                 >
                   <SelectItem key="center">Center</SelectItem>
                   <SelectItem key="top">Top</SelectItem>
@@ -407,10 +422,10 @@ export default function CreatePage() {
                 <Select
                   label="Text Preset"
                   selectedKeys={[preset]}
+                  size="sm"
                   onSelectionChange={(keys) =>
                     setPreset(Array.from(keys)[0] as string)
                   }
-                  size="sm"
                 >
                   <SelectItem key="instagram1">Instagram 1</SelectItem>
                   <SelectItem key="instagram2">Instagram 2</SelectItem>
@@ -425,29 +440,29 @@ export default function CreatePage() {
                 <Select
                   label="Fit Mode"
                   selectedKeys={[fitMode]}
+                  size="sm"
                   onSelectionChange={(keys) =>
                     setFitMode(Array.from(keys)[0] as string)
                   }
-                  size="sm"
                 >
                   <SelectItem key="cover">Cover</SelectItem>
                   <SelectItem key="contain">Contain</SelectItem>
                 </Select>
 
                 <Input
+                  isDisabled={!uniqueMode}
                   label="Unique Amount"
+                  size="sm"
                   type="number"
                   value={uniqueAmount}
                   onValueChange={setUniqueAmount}
-                  isDisabled={!uniqueMode}
-                  size="sm"
                 />
               </div>
 
               <Switch
                 isSelected={uniqueMode}
-                onValueChange={setUniqueMode}
                 size="sm"
+                onValueChange={setUniqueMode}
               >
                 Unique Mode (Diverse combinations)
               </Switch>
@@ -475,7 +490,6 @@ export default function CreatePage() {
                     </div>
 
                     <Progress
-                      value={jobStatus.progress}
                       color={
                         jobStatus.status === "completed"
                           ? "success"
@@ -484,36 +498,41 @@ export default function CreatePage() {
                             : "primary"
                       }
                       size="sm"
+                      value={jobStatus.progress}
                     />
 
                     <p className="text-xs text-default-500">
                       {jobStatus.message}
                     </p>
 
-                    {jobStatus && jobStatus.output_files && jobStatus.output_files.length > 0 && (
-                      <div>
-                        <p className="text-xs font-semibold mb-1">
-                          Output Files ({jobStatus.output_files.length}):
-                        </p>
-                        <div className="text-xs text-default-500 max-h-20 overflow-y-auto">
-                          {jobStatus.output_files.slice(0, 3).map((file, i) => (
-                            <div key={i}>{file.split("/").pop()}</div>
-                          ))}
-                          {jobStatus.output_files.length > 3 && (
-                            <div>
-                              ... and {jobStatus.output_files.length - 3} more
-                            </div>
-                          )}
+                    {jobStatus &&
+                      jobStatus.output_files &&
+                      jobStatus.output_files.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold mb-1">
+                            Output Files ({jobStatus.output_files.length}):
+                          </p>
+                          <div className="text-xs text-default-500 max-h-20 overflow-y-auto">
+                            {jobStatus.output_files
+                              .slice(0, 3)
+                              .map((file, i) => (
+                                <div key={i}>{file.split("/").pop()}</div>
+                              ))}
+                            {jobStatus.output_files.length > 3 && (
+                              <div>
+                                ... and {jobStatus.output_files.length - 3} more
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
                     {jobStatus.status === "completed" && (
                       <Button
-                        color="success"
-                        variant="flat"
-                        size="sm"
                         className="w-full"
+                        color="success"
+                        size="sm"
+                        variant="flat"
                         onPress={() => router.push("/dashboard/projects")}
                       >
                         View Projects
@@ -533,25 +552,28 @@ export default function CreatePage() {
             <Divider />
             <CardBody className="">
               <Input
+                isRequired
                 placeholder="Cute Dog Channel"
+                size="sm"
                 value={projectName}
                 onValueChange={setProjectName}
-                isRequired
-                size="sm"
               />
             </CardBody>
           </Card>
 
           {/* Start Processing Button */}
           <Button
-            color="primary"
-            size="lg"
             className="w-full"
-            onPress={handleStartBatch}
-            isLoading={processing}
+            color="primary"
             isDisabled={
-              !selectedVideoFolder || !selectedAudioFolder || !selectedCSV || !projectName.trim()
+              !selectedVideoFolder ||
+              !selectedAudioFolder ||
+              !selectedCSV ||
+              !projectName.trim()
             }
+            isLoading={processing}
+            size="lg"
+            onPress={handleStartBatch}
           >
             Start Batch Processing
           </Button>
@@ -569,12 +591,12 @@ export default function CreatePage() {
                 {/* Video background */}
                 {previewVideoSrc ? (
                   <video
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
                     className={`absolute inset-0 w-full h-full ${getFitModeStyle()}`}
                     src={`${previewVideoSrc}#t=0.1`}
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
                   />
                 ) : (
                   <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 via-pink-500/20 to-orange-500/20">
@@ -610,10 +632,10 @@ export default function CreatePage() {
                 {/* Preview label */}
                 <div className="absolute top-2 right-2">
                   <Chip
+                    className="text-xs"
+                    color="default"
                     size="sm"
                     variant="flat"
-                    color="default"
-                    className="text-xs"
                   >
                     Live
                   </Chip>

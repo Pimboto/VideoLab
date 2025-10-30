@@ -4,7 +4,12 @@
  */
 import { useAuth } from "@clerk/nextjs";
 import { useState, useCallback } from "react";
-import { apiClient, API_ENDPOINTS, ProcessingConfigResponse } from "@/lib/api/client";
+
+import {
+  apiClient,
+  API_ENDPOINTS,
+  ProcessingConfigResponse,
+} from "@/lib/api/client";
 
 export interface ProcessingVideo {
   filename: string;
@@ -64,24 +69,31 @@ export function useProcessing() {
   /**
    * List available videos for processing
    */
-  const listVideos = useCallback(async (): Promise<ProcessingVideo[] | null> => {
+  const listVideos = useCallback(async (): Promise<
+    ProcessingVideo[] | null
+  > => {
     setIsLoading(true);
     setError(null);
 
     try {
       const token = await getToken();
+
       if (!token) {
         throw new Error("Not authenticated");
       }
 
       const response = await apiClient.get<{ videos: ProcessingVideo[] }>(
         API_ENDPOINTS.PROCESSING.LIST_VIDEOS,
-        token
+        token,
       );
+
       return response.videos || [];
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to list videos";
+      const message =
+        err instanceof Error ? err.message : "Failed to list videos";
+
       setError(message);
+
       return null;
     } finally {
       setIsLoading(false);
@@ -91,24 +103,31 @@ export function useProcessing() {
   /**
    * List available audios for processing
    */
-  const listAudios = useCallback(async (): Promise<ProcessingAudio[] | null> => {
+  const listAudios = useCallback(async (): Promise<
+    ProcessingAudio[] | null
+  > => {
     setIsLoading(true);
     setError(null);
 
     try {
       const token = await getToken();
+
       if (!token) {
         throw new Error("Not authenticated");
       }
 
       const response = await apiClient.get<{ audios: ProcessingAudio[] }>(
         API_ENDPOINTS.PROCESSING.LIST_AUDIOS,
-        token
+        token,
       );
+
       return response.audios || [];
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to list audios";
+      const message =
+        err instanceof Error ? err.message : "Failed to list audios";
+
       setError(message);
+
       return null;
     } finally {
       setIsLoading(false);
@@ -118,30 +137,35 @@ export function useProcessing() {
   /**
    * Get default processing configuration
    */
-  const getDefaultConfig = useCallback(async (): Promise<ProcessingConfig | null> => {
-    setIsLoading(true);
-    setError(null);
+  const getDefaultConfig =
+    useCallback(async (): Promise<ProcessingConfig | null> => {
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      const token = await getToken();
-      if (!token) {
-        throw new Error("Not authenticated");
+      try {
+        const token = await getToken();
+
+        if (!token) {
+          throw new Error("Not authenticated");
+        }
+
+        const response = await apiClient.get<ProcessingConfigResponse>(
+          API_ENDPOINTS.PROCESSING.DEFAULT_CONFIG,
+          token,
+        );
+
+        return response.config;
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to get default config";
+
+        setError(message);
+
+        return null;
+      } finally {
+        setIsLoading(false);
       }
-
-      const response = await apiClient.get<ProcessingConfigResponse>(
-        API_ENDPOINTS.PROCESSING.DEFAULT_CONFIG,
-        token
-      );
-      return response.config;
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to get default config";
-      setError(message);
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [getToken]);
+    }, [getToken]);
 
   /**
    * Process a single video
@@ -153,6 +177,7 @@ export function useProcessing() {
 
       try {
         const token = await getToken();
+
         if (!token) {
           throw new Error("Not authenticated");
         }
@@ -160,19 +185,22 @@ export function useProcessing() {
         const response = await apiClient.post<ProcessingResponse>(
           API_ENDPOINTS.PROCESSING.PROCESS_SINGLE,
           request,
-          token
+          token,
         );
+
         return response;
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Failed to start processing";
+
         setError(message);
+
         return null;
       } finally {
         setIsLoading(false);
       }
     },
-    [getToken]
+    [getToken],
   );
 
   /**
@@ -185,6 +213,7 @@ export function useProcessing() {
 
       try {
         const token = await getToken();
+
         if (!token) {
           throw new Error("Not authenticated");
         }
@@ -192,19 +221,24 @@ export function useProcessing() {
         const response = await apiClient.post<ProcessingResponse>(
           API_ENDPOINTS.PROCESSING.PROCESS_BATCH,
           request,
-          token
+          token,
         );
+
         return response;
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to start batch processing";
+          err instanceof Error
+            ? err.message
+            : "Failed to start batch processing";
+
         setError(message);
+
         return null;
       } finally {
         setIsLoading(false);
       }
     },
-    [getToken]
+    [getToken],
   );
 
   return {

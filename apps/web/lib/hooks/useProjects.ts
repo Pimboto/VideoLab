@@ -4,7 +4,13 @@
  */
 import { useAuth } from "@clerk/nextjs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiClient, API_ENDPOINTS, type Project, type ProjectUrls } from "@/lib/api/client";
+
+import {
+  apiClient,
+  API_ENDPOINTS,
+  type Project,
+  type ProjectUrls,
+} from "@/lib/api/client";
 
 // Query keys for cache management
 export const projectKeys = {
@@ -30,6 +36,7 @@ export function useProjects(options?: {
     queryKey: projectKeys.list(options),
     queryFn: async () => {
       const token = await getToken();
+
       if (!token) throw new Error("Not authenticated");
 
       let endpoint = API_ENDPOINTS.PROJECTS.LIST;
@@ -59,11 +66,12 @@ export function useProject(projectId: string | null) {
       if (!projectId) return null;
 
       const token = await getToken();
+
       if (!token) throw new Error("Not authenticated");
 
       return apiClient.get<Project>(
         API_ENDPOINTS.PROJECTS.GET(projectId),
-        token
+        token,
       );
     },
     enabled: !!projectId,
@@ -84,11 +92,12 @@ export function useProjectUrls(projectId: string | null) {
       if (!projectId) return null;
 
       const token = await getToken();
+
       if (!token) throw new Error("Not authenticated");
 
       return apiClient.get<ProjectUrls>(
         API_ENDPOINTS.PROJECTS.GET_URLS(projectId),
-        token
+        token,
       );
     },
     enabled: !!projectId,
@@ -105,14 +114,13 @@ export function useDeleteProject() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (params: {
-      projectId: string;
-      hardDelete?: boolean;
-    }) => {
+    mutationFn: async (params: { projectId: string; hardDelete?: boolean }) => {
       const token = await getToken();
+
       if (!token) throw new Error("Not authenticated");
 
       let endpoint = API_ENDPOINTS.PROJECTS.DELETE(params.projectId);
+
       if (params.hardDelete) endpoint += "?hard_delete=true";
 
       return apiClient.delete(endpoint, token);
@@ -131,17 +139,15 @@ export function useDownloadProject() {
   const { getToken } = useAuth();
 
   return useMutation({
-    mutationFn: async (params: {
-      projectId: string;
-      projectName: string;
-    }) => {
+    mutationFn: async (params: { projectId: string; projectName: string }) => {
       const token = await getToken();
+
       if (!token) throw new Error("Not authenticated");
 
       // Get fresh signed URL
       const urls = await apiClient.get<ProjectUrls>(
         API_ENDPOINTS.PROJECTS.GET_URLS(params.projectId),
-        token
+        token,
       );
 
       if (!urls.zip_url) {
@@ -150,6 +156,7 @@ export function useDownloadProject() {
 
       // Trigger download
       const link = document.createElement("a");
+
       link.href = urls.zip_url;
       link.download = `${params.projectName}.zip`;
       document.body.appendChild(link);

@@ -17,6 +17,7 @@ export function useAuthFetch() {
       }
 
       const headers = new Headers(options.headers);
+
       headers.set("Authorization", `Bearer ${token}`);
 
       return fetch(url, {
@@ -24,9 +25,8 @@ export function useAuthFetch() {
         headers,
       });
     },
-    [getToken]
+    [getToken],
   );
 
   return authFetch;
 }
-

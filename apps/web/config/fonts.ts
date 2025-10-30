@@ -1,5 +1,10 @@
 // config/fonts.ts
-import { Fira_Code as FontMono, Poppins as FontSans, Roboto, Inter } from "next/font/google";
+import {
+  Fira_Code as FontMono,
+  Poppins as FontSans,
+  Roboto,
+  Inter,
+} from "next/font/google";
 
 export const fontSans = FontSans({
   subsets: ["latin"],

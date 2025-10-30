@@ -1,10 +1,10 @@
 "use client";
 
 import { Card, CardBody } from "@heroui/card";
-import { 
-  ArrowUpTrayIcon as UploadIcon, 
-  Cog6ToothIcon as CpuChipIcon, 
-  ClockIcon
+import {
+  ArrowUpTrayIcon as UploadIcon,
+  Cog6ToothIcon as CpuChipIcon,
+  ClockIcon,
 } from "@heroicons/react/24/outline";
 
 import { title, subtitle } from "@/components/primitives";
@@ -14,9 +14,7 @@ export default function ApiFeatures() {
     <section className="py-16">
       <div className="container mx-auto max-w-7xl px-6">
         <div className="text-center mb-12">
-          <h2 className={title({ size: "md" })}>
-            Complete REST API
-          </h2>
+          <h2 className={title({ size: "md" })}>Complete REST API</h2>
           <p className={subtitle({ class: "mt-4 max-w-2xl mx-auto" })}>
             Professional endpoints for integration with any application
           </p>

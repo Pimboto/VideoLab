@@ -6,7 +6,6 @@ export { useFiles } from "./useFiles";
 export type { FileItem, FileListResponse, FileCategory } from "./useFiles";
 export { useFolders } from "./useFolders";
 export type {
-  Folder,
   FolderListResponse as FoldersListResponse,
   FolderCategory,
   FolderCreateRequest,

@@ -4,6 +4,7 @@
  */
 import { useAuth } from "@clerk/nextjs";
 import { useState, useCallback } from "react";
+
 import { apiClient, API_ENDPOINTS } from "@/lib/api/client";
 
 export type UploadCategory = "video" | "audio" | "csv";
@@ -33,7 +34,7 @@ export function useUpload() {
     async (
       file: File,
       category: UploadCategory,
-      folderName?: string
+      folderName?: string,
     ): Promise<UploadResult> => {
       setIsUploading(true);
       setUploadProgress(0);
@@ -41,12 +42,14 @@ export function useUpload() {
 
       try {
         const token = await getToken();
+
         if (!token) {
           throw new Error("Not authenticated");
         }
 
         // Determine endpoint based on category
         let endpoint: string;
+
         switch (category) {
           case "video":
             endpoint = API_ENDPOINTS.FILES.UPLOAD_VIDEO;
@@ -63,9 +66,10 @@ export function useUpload() {
 
         // Create FormData
         const formData = new FormData();
+
         formData.append("file", file);
         if (folderName) {
-          formData.append("subfolder", folderName);  // Backend expects 'subfolder'
+          formData.append("subfolder", folderName); // Backend expects 'subfolder'
         }
 
         // Upload with progress tracking
@@ -75,16 +79,18 @@ export function useUpload() {
           token,
           (progress) => {
             setUploadProgress(Math.round(progress));
-          }
+          },
         );
 
         return {
-          success: true,
           ...response,
+          success: true,
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : "Upload failed";
+
         setError(message);
+
         return {
           success: false,
           error: message,
@@ -94,7 +100,7 @@ export function useUpload() {
         setUploadProgress(0);
       }
     },
-    [getToken]
+    [getToken],
   );
 
   /**
@@ -104,12 +110,13 @@ export function useUpload() {
     async (
       files: File[],
       category: UploadCategory,
-      folderName?: string
+      folderName?: string,
     ): Promise<UploadResult[]> => {
       const results: UploadResult[] = [];
 
       for (const file of files) {
         const result = await uploadFile(file, category, folderName);
+
         results.push(result);
 
         // Stop on first error if needed
@@ -120,7 +127,7 @@ export function useUpload() {
 
       return results;
     },
-    [uploadFile]
+    [uploadFile],
   );
 
   /**
